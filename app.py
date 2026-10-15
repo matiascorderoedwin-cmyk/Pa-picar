@@ -16,16 +16,34 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 load_dotenv()
 
-app = Flask(__name__)
-app.secret_key = os.getenv("SECRET_KEY") or secrets.token_hex(32)
-app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE='Lax', PERMANENT_SESSION_LIFETIME=timedelta(hours=8), MAX_CONTENT_LENGTH=1024*1024)
-if os.getenv('COOKIE_SECURE', 'false').lower() == 'true':
-    app.config['SESSION_COOKIE_SECURE'] = True
+# Vercel entrega los recursos public/ desde su CDN; localmente se usa static/.
+app = Flask(__name__, static_folder='public/static' if os.getenv('VERCEL') else 'static')
+_secret_key = os.getenv('SECRET_KEY')
+if os.getenv('VERCEL') and not _secret_key:
+    raise RuntimeError('Configura SECRET_KEY en las variables privadas de Vercel.')
+app.secret_key = _secret_key or secrets.token_hex(32)
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='Lax',
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=8),
+    MAX_CONTENT_LENGTH=1024 * 1024,
+    SESSION_COOKIE_SECURE=bool(os.getenv('VERCEL')) or os.getenv('COOKIE_SECURE', 'false').lower() == 'true',
+)
 
 
 
 def conectar():
-    """Abrir una conexión con la base PostgreSQL existente."""
+    """Conectar con PostgreSQL local o con el pooler seguro de Supabase."""
+    database_url = os.getenv('DATABASE_URL', '').strip()
+    if database_url:
+        return psycopg.connect(
+            database_url,
+            connect_timeout=5,
+            sslmode=os.getenv('DATABASE_SSLMODE', 'require'),
+            prepare_threshold=None,  # Compatible con el Transaction Pooler de Supabase.
+        )
+    if os.getenv('VERCEL'):
+        raise RuntimeError('Configura DATABASE_URL en las variables privadas de Vercel.')
     return psycopg.connect(
         dbname=os.getenv("DATABASE_NAME", "base_de_pa-picar"),
         user=os.getenv("DATABASE_USER", "postgres"),

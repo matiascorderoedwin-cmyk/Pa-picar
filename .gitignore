@@ -19,3 +19,6 @@ Thumbs.db
 *.bak
 backups/
 private/
+
+# Metadatos privados del CLI de Vercel
+.vercel/
