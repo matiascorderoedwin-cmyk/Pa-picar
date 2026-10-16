@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#77401d">
-  <title>Pa Picar · Inventario</title>
+  <title>Pa Picar · Panel principal</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='estilos.css') }}">
 
 <link rel="stylesheet" href="{{ url_for('static', filename='pa-picar-marca.css') }}">
@@ -25,8 +25,8 @@
     <div class="introduccion">
       <div>
         <p class="sobretitulo">SISTEMA DE FACTURACIÓN</p>
-        <h1>Control de productos</h1>
-        <p>Gestiona las picaderas de tu negocio desde la computadora o el celular.</p>
+        <h1>Panel principal</h1>
+        <p>Consulta las ventas y el inventario de tu negocio en un solo lugar.</p>
       </div>
       <span class="estado {{ 'conectado' if base_disponible else 'sin-conexion' }}">
         <span class="punto"></span>
@@ -40,13 +40,47 @@
       {% endfor %}
     {% endwith %}
 
-    <section class="estadisticas" aria-label="Resumen">
-      <article class="estadistica"><span>Tipos de productos</span><strong>{{ cantidad_productos }}</strong><small>Registrados en la base</small></article>
-      <article class="estadistica"><span>Unidades disponibles</span><strong>{{ total_unidades }}</strong><small>Existencias registradas</small></article>
-      <article class="estadistica destacado"><span>Ventas de hoy</span><strong>RD$ {{ "%.2f"|format(total_ventas) }}</strong><small>Facturas registradas</small></article>
+    <section class="estadisticas panel-resumen" aria-label="Resumen del negocio">
+      <article class="estadistica destacado"><span>Ingresos de hoy</span><strong>RD$ {{ '{:,.2f}'.format(total_ventas) }}</strong><small>Solo facturas activas</small></article>
+      <article class="estadistica"><span>Facturas de hoy</span><strong>{{ facturas_hoy }}</strong><small>Ventas completadas</small></article>
+      <article class="estadistica"><span>Unidades disponibles</span><strong>{{ total_unidades }}</strong><small>{{ cantidad_productos }} tipos de productos activos</small></article>
+      <article class="estadistica"><span>Inventario bajo</span><strong>{{ inventario_bajo|length }}</strong><small>Productos con 10 unidades o menos</small></article>
     </section>
+    <div class="panel-paneles">
+      <section class="panel" aria-labelledby="pagos-titulo">
+        <h2 id="pagos-titulo">Ingresos de hoy por método de pago</h2>
+        <div class="pago-fila"><span>Efectivo</span><strong>RD$ {{ '{:,.2f}'.format(ventas_efectivo) }}</strong></div>
+        <div class="pago-fila"><span>Transferencia</span><strong>RD$ {{ '{:,.2f}'.format(ventas_transferencia) }}</strong></div>
+        <a class="enlace-panel" href="{{ url_for('reportes') }}">Ver reportes →</a>
+      </section>
+      <section class="panel" aria-labelledby="alertas-titulo">
+        <h2 id="alertas-titulo">Avisos de inventario</h2>
+        {% if inventario_bajo %}
+          <ul class="avisos-stock">
+          {% for producto in inventario_bajo %}
+            <li><span>{{ producto.nombre }}</span><strong>{{ producto.cantidad or 0 }} uds.</strong></li>
+          {% endfor %}
+          </ul>
+        {% else %}
+          <p class="estado-bien">Todos los productos activos tienen más de 10 unidades.</p>
+        {% endif %}
+        {% if usuario_actual.rol == 'administrador' %}<a class="enlace-panel" href="{{ url_for('administracion') }}">Administrar inventario →</a>{% endif %}
+      </section>
+      <section class="panel panel-ultimas" aria-labelledby="ultimas-titulo">
+        <h2 id="ultimas-titulo">Últimas ventas</h2>
+        {% if ultimas_ventas %}
+        <div class="tabla-scroll">
+          <table><thead><tr><th>Factura</th><th>Fecha (RD)</th><th>Método</th><th>Total</th></tr></thead>
+          <tbody>{% for venta in ultimas_ventas %}
+            <tr><td><a href="{{ url_for('recibo', venta_id=venta.id) }}">#{{ venta.id }}</a></td><td>{{ venta.fecha_local.strftime('%d/%m/%Y %I:%M %p') }}</td><td>{{ venta.metodo_pago }}</td><td>RD$ {{ '{:,.2f}'.format(venta.total) }}</td></tr>
+          {% endfor %}</tbody></table>
+        </div>
+        {% else %}<p>Aún no hay ventas registradas.</p>{% endif %}
+        <a class="enlace-panel" href="{{ url_for('listado_ventas') }}">Ver historial →</a>
+      </section>
+    </div>
 
-    <div class="columnas">
+    <h2 class="seccion-productos">Productos y catálogo</h2>\n    <div class="columnas">
       <section class="panel" aria-labelledby="nuevo-titulo">
         <div class="panel-cabecera">
           <h2 id="nuevo-titulo">Agregar producto</h2>
@@ -97,13 +131,13 @@
         {% endif %}
       </section>
     </div>
-    <footer>Pa Picar · Versión inicial de pruebas · No usar todavía para facturación fiscal.</footer>
+    <footer>Pa Picar · Sistema de gestión · Los recibos internos no sustituyen comprobantes fiscales DGII.</footer>
   </main>
 <form class="salir-flotante" method="post" action="{{ url_for('logout') }}">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <button type="submit" aria-label="Cerrar sesión">Salir</button>
   </form>
-  <style>
+  <style>\n    .panel-resumen{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:20px}\n    .panel-resumen .estadistica{min-width:0}\n    .panel-resumen .estadistica strong{overflow-wrap:anywhere}\n    .panel-paneles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:20px 0 28px}\n    .panel-paneles .panel{min-width:0}\n    .panel-paneles h2{font-size:1.12rem;margin:0 0 16px}\n    .panel-ultimas{grid-column:1/-1}\n    .pago-fila,.avisos-stock li{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:11px 0;border-bottom:1px solid #e6d2bf}\n    .avisos-stock{list-style:none;margin:0;padding:0}\n    .avisos-stock li strong{white-space:nowrap}\n    .enlace-panel{display:inline-block;margin-top:16px;font-weight:700;text-decoration:underline}\n    .estado-bien{color:#416336}\n    .seccion-productos{margin:28px 0 14px}\n    @media(max-width:850px){.panel-resumen{grid-template-columns:repeat(2,minmax(0,1fr))}}\n    @media(max-width:600px){.panel-paneles{grid-template-columns:1fr}.panel-resumen{gap:10px}.panel-resumen .estadistica{padding:14px 10px}.panel-resumen .estadistica strong{font-size:clamp(1.1rem,5vw,1.65rem)}.panel-ultimas{grid-column:auto}}
     .salir-flotante{position:fixed;right:14px;bottom:14px;z-index:99;margin:0}
     .salir-flotante button{width:auto!important;min-width:72px;padding:9px 17px!important;border-radius:999px!important;background:#77401d!important;color:#fffaf4!important;border:1px solid #e6d2bf!important;box-shadow:0 5px 18px #4d2b1933;font-size:13px;line-height:1.2;font-weight:650;cursor:pointer}
     .salir-flotante button:hover{background:#995523!important}
