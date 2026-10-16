@@ -1,10 +1,123 @@
-<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pa Picar · Facturar</title><link rel="stylesheet" href="{{ url_for('static',filename='estilos.css') }}"><style>.ventas-layout{display:grid;grid-template-columns:1fr 1fr;gap:20px}.producto{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:12px;border-bottom:1px solid #ddd}.producto button,.boton{background:#244c35;color:white;border:0;border-radius:9px;padding:12px;cursor:pointer}.producto button:disabled{opacity:.4}.carrito{width:100%;border-collapse:collapse}.carrito td{padding:10px;border-bottom:1px solid #ddd}.carrito input{width:65px;padding:8px}.total{font-size:26px;font-weight:bold;text-align:right}@media(max-width:750px){.ventas-layout{grid-template-columns:1fr}}</style>
-<link rel="stylesheet" href="{{ url_for('static', filename='pa-picar-marca.css') }}">
-</head><body><div class="nav-picar no-print" style="max-width:1120px;margin:14px auto 0;padding:0 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap"><a href="{{ url_for('inicio') }}" style="padding:3px"><img src="{{ url_for('static',filename='logo-pa-picar.png') }}" alt="Pa Picar" style="width:120px;height:auto;display:block"></a><a href="{{ url_for('inicio') }}">Inicio</a><a href="{{ url_for('facturar') }}">Facturar</a><a href="{{ url_for('listado_ventas') }}">Ventas</a>{% if usuario_actual.rol == 'administrador' %}<a href="{{ url_for('administracion') }}">Administración</a><a href="{{ url_for('reportes') }}">Reportes</a>{% endif %}</div><header class="cabecera"><div class="contenido cabecera-interior"><a class="marca" href="{{ url_for('inicio') }}">Pa Picar</a><span class="entorno">FACTURACIÓN</span></div></header><main class="contenido principal"><p><a href="{{ url_for('inicio') }}">← Productos</a> · <a href="{{ url_for('listado_ventas') }}">Historial</a></p><h1>Nueva factura</h1>{% with mensajes=get_flashed_messages(with_categories=true) %}{% for cat,msg in mensajes %}<div class="alerta {{cat}}">{{msg}}</div>{% endfor %}{% endwith %}<div class="ventas-layout"><section class="panel"><div class="panel-cabecera"><h2>Seleccionar picaderas</h2></div><div id="catalogo">{% for p in productos %}<div class="producto"><div><strong>{{p.nombre}}</strong><br>RD$ {{"%.2f"|format(p.precio)}} · Disponibles: {{p.cantidad}}</div><button type="button" onclick="agregar({{p.id}})" {% if not p.cantidad or p.cantidad <= 0 %}disabled{% endif %}>+ Agregar</button></div>{% endfor %}</div></section><section class="panel"><div class="panel-cabecera"><h2>Carrito</h2></div><div style="padding:20px"><table class="carrito"><tbody id="carrito"></tbody></table><p class="total" id="total">RD$ 0.00</p><form method="post" action="{{ url_for('crear_venta') }}" onsubmit="return preparar()"><input type="hidden" name="csrf" value="{{csrf_token()}}"><input type="hidden" name="items" id="items"><label for="metodo">Método de pago</label><select name="metodo" id="metodo" required style="display:block;padding:12px;width:100%;margin:12px 0"><option value="Efectivo">Efectivo</option><option value="Transferencia">Transferencia</option></select><button class="boton" style="width:100%">Confirmar venta</button></form><p><small>Los precios se recalculan y las existencias se verifican en el servidor al confirmar.</small></p></div></section></div></main><script>const productos={{ productos|tojson }};const cesta={};const dinero=n=>'RD$ '+n.toLocaleString('es-DO',{minimumFractionDigits:2,maximumFractionDigits:2});function agregar(id){const p=productos.find(x=>x.id===id);if((cesta[id]||0)<p.cantidad){cesta[id]=(cesta[id]||0)+1;render()}}function cambiar(id,v){const p=productos.find(x=>x.id===id);const n=Number(v);if(!Number.isInteger(n)||n<1){delete cesta[id]}else{cesta[id]=Math.min(n,p.cantidad)}render()}function render(){const body=document.getElementById('carrito');body.replaceChildren();let total=0;for(const [id,cant] of Object.entries(cesta)){const p=productos.find(x=>x.id===Number(id));total+=Number(p.precio)*cant;const tr=document.createElement('tr');const td=document.createElement('td');td.textContent=p.nombre+' · '+dinero(Number(p.precio));const qty=document.createElement('td');const input=document.createElement('input');input.type='number';input.min=1;input.max=p.cantidad;input.value=cant;input.setAttribute('aria-label','Cantidad de '+p.nombre);input.addEventListener('change',()=>cambiar(p.id,input.value));qty.append(input);tr.append(td,qty);body.append(tr)}document.getElementById('total').textContent=dinero(total)}function preparar(){const items=Object.entries(cesta).map(([id,cantidad])=>({id:Number(id),cantidad}));if(!items.length){alert('Agrega productos a la venta');return false}document.getElementById('items').value=JSON.stringify(items);return confirm('¿Confirmar venta por '+document.getElementById('total').textContent+'?')}render()</script><form class="salir-flotante no-print" method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button type="submit" aria-label="Cerrar sesión">Salir</button></form><style>
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pa Picar · Nueva factura</title>
+<link rel="stylesheet" href="{{ url_for('static',filename='estilos.css') }}">
+<link rel="stylesheet" href="{{ url_for('static',filename='pa-picar-marca.css') }}">
+<style>
+.factura-unica{max-width:760px;margin:0 auto}.factura-unica .panel{padding:clamp(16px,4vw,30px)}
+.factura-unica h1{margin:10px 0 18px}.factura-unica h2{font-size:1.12rem;margin:22px 0 12px}
+.buscador-productos{width:100%;font-size:16px;padding:15px!important}
+.resultados{border:1px solid #e6d2bf;border-radius:14px;overflow:hidden;margin:10px 0 20px;max-height:270px;overflow-y:auto}
+.resultado{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-bottom:1px solid #eadbcd}
+.resultado:last-child{border-bottom:0}.resultado strong{display:block}.resultado small{display:block;margin-top:4px;color:#795b48}
+.resultado button{flex:none;min-width:88px}.resultado button:disabled{opacity:.45}
+.productos-elegidos{display:grid;gap:10px}.linea-venta{border:1px solid #e6d2bf;border-radius:13px;padding:14px;background:#fffaf4}
+.linea-top{display:flex;justify-content:space-between;gap:12px;align-items:start}.linea-top strong{display:block}
+.linea-top small{display:block;margin-top:5px}.linea-bottom{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px}
+.cantidad-controles{display:flex;align-items:center;gap:8px}.cantidad-controles button{width:38px;height:38px;padding:0!important}
+.cantidad-controles input{width:65px;text-align:center;font-size:16px;padding:7px!important}
+.eliminar-producto{background:transparent!important;color:#8b381f!important;text-decoration:underline;padding:4px!important}
+.resumen-factura{display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:2px solid #e6d2bf;margin-top:22px;padding-top:18px;font-size:1.2rem}
+.resumen-factura strong{font-size:1.6rem;color:#77401d}
+.vacio-factura{padding:20px;text-align:center;border:1px dashed #d7bea6;border-radius:12px;color:#795b48}
+.metodo-pago{display:block;width:100%;font-size:16px;padding:13px!important;margin:8px 0 18px}
+.confirmar-factura{display:block;width:100%;font-size:17px;padding:15px!important}
+.ayuda-factura{font-size:12px;color:#795b48;margin-top:14px}
+@media(max-width:520px){.resultado{padding:11px 9px}.resultado button{min-width:76px}.linea-bottom{flex-wrap:wrap}.resumen-factura strong{font-size:1.35rem}}
+</style>
+</head>
+<body>
+<div class="nav-picar no-print" style="max-width:1120px;margin:14px auto 0;padding:0 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+<a href="{{ url_for('inicio') }}" style="padding:3px"><img src="{{ url_for('static',filename='logo-pa-picar.png') }}" alt="Pa Picar" style="width:120px;height:auto;display:block"></a>
+<a href="{{ url_for('inicio') }}">Inicio</a><a href="{{ url_for('facturar') }}">Facturar</a><a href="{{ url_for('listado_ventas') }}">Ventas</a>
+{% if usuario_actual.rol == 'administrador' %}<a href="{{ url_for('administracion') }}">Administración</a><a href="{{ url_for('reportes') }}">Reportes</a>{% endif %}
+</div>
+<header class="cabecera"><div class="contenido cabecera-interior"><a class="marca" href="{{ url_for('inicio') }}">Pa Picar</a><span class="entorno">FACTURACIÓN</span></div></header>
+<main class="contenido principal factura-unica">
+<p><a href="{{ url_for('inicio') }}">← Inicio</a> · <a href="{{ url_for('listado_ventas') }}">Historial</a></p>
+<h1>Nueva factura</h1>
+{% with mensajes=get_flashed_messages(with_categories=true) %}{% for cat,msg in mensajes %}<div class="alerta {{cat}}">{{msg}}</div>{% endfor %}{% endwith %}
+<section class="panel">
+<label for="buscar"><strong>Buscar producto</strong></label>
+<input class="buscador-productos" id="buscar" type="search" placeholder="Escribe el nombre: quipes, pastelitos..." autocomplete="off" aria-controls="resultados">
+<div id="resultados" class="resultados" aria-live="polite"></div>
+<h2>Productos de la factura</h2>
+<div id="seleccionados" class="productos-elegidos" aria-live="polite"></div>
+<div class="resumen-factura"><span>Total a pagar</span><strong id="total">RD$ 0.00</strong></div>
+<form method="post" action="{{ url_for('crear_venta') }}" onsubmit="return preparar()">
+<input type="hidden" name="csrf" value="{{csrf_token()}}"><input type="hidden" name="items" id="items">
+<h2><label for="metodo">Método de pago</label></h2>
+<select class="metodo-pago" name="metodo" id="metodo" required><option value="Efectivo">Efectivo</option><option value="Transferencia">Transferencia</option></select>
+<button class="confirmar-factura" type="submit" id="confirmar" disabled>Confirmar venta</button>
+<p class="ayuda-factura">El servidor verifica precios y existencias antes de registrar la factura.</p>
+</form>
+</section>
+</main>
+<script>
+const productos={{ productos|tojson }};
+const cesta={};
+const dinero=n=>'RD$ '+n.toLocaleString('es-DO',{minimumFractionDigits:2,maximumFractionDigits:2});
+const buscar=document.getElementById('buscar');
+const resultados=document.getElementById('resultados');
+const seleccionados=document.getElementById('seleccionados');
+function agregar(id){const p=productos.find(x=>x.id===id);if(!p||p.cantidad<=0)return;if((cesta[id]||0)<p.cantidad)cesta[id]=(cesta[id]||0)+1;render();}
+function cambiar(id,valor){const p=productos.find(x=>x.id===id);const n=Number(valor);if(!p)return;if(!Number.isInteger(n)||n<1){delete cesta[id];}else{cesta[id]=Math.min(n,p.cantidad);}render();}
+function quitar(id){delete cesta[id];render();}
+function crearBoton(texto,accion,clase){const b=document.createElement('button');b.type='button';b.textContent=texto;if(clase)b.className=clase;b.addEventListener('click',accion);return b;}
+function renderResultados(){
+ resultados.replaceChildren();
+ const termino=buscar.value.trim().toLocaleLowerCase('es');
+ const encontrados=productos.filter(p=>p.nombre.toLocaleLowerCase('es').includes(termino));
+ if(!encontrados.length){const p=document.createElement('p');p.className='vacio-factura';p.textContent='No se encontraron productos.';resultados.append(p);return;}
+ for(const p of encontrados){
+  const fila=document.createElement('div');fila.className='resultado';
+  const datos=document.createElement('div');const nombre=document.createElement('strong');nombre.textContent=p.nombre;
+  const info=document.createElement('small');info.textContent=dinero(Number(p.precio))+' · Disponibles: '+p.cantidad;
+  datos.append(nombre,info);
+  const boton=crearBoton('+ Agregar',()=>agregar(p.id));boton.disabled=p.cantidad<=0||(cesta[p.id]||0)>=p.cantidad;
+  fila.append(datos,boton);resultados.append(fila);
+ }
+}
+function render(){
+ seleccionados.replaceChildren();let total=0;let n=0;
+ for(const [id,cant] of Object.entries(cesta)){
+  const p=productos.find(x=>x.id===Number(id));if(!p)continue;n++;total+=Number(p.precio)*cant;
+  const linea=document.createElement('div');linea.className='linea-venta';
+  const top=document.createElement('div');top.className='linea-top';
+  const datos=document.createElement('div');const nombre=document.createElement('strong');nombre.textContent=p.nombre;
+  const precio=document.createElement('small');precio.textContent=dinero(Number(p.precio))+' por unidad';
+  datos.append(nombre,precio);top.append(datos,crearBoton('Quitar',()=>quitar(p.id),'eliminar-producto'));
+  const bottom=document.createElement('div');bottom.className='linea-bottom';
+  const controles=document.createElement('div');controles.className='cantidad-controles';
+  const menos=crearBoton('−',()=>cambiar(p.id,cant-1));menos.setAttribute('aria-label','Restar una unidad de '+p.nombre);
+  const input=document.createElement('input');input.type='number';input.min='1';input.max=String(p.cantidad);input.step='1';input.value=String(cant);input.setAttribute('aria-label','Cantidad de '+p.nombre);input.addEventListener('change',()=>cambiar(p.id,input.value));
+  const mas=crearBoton('+',()=>agregar(p.id));mas.disabled=cant>=p.cantidad;mas.setAttribute('aria-label','Sumar una unidad de '+p.nombre);
+  controles.append(menos,input,mas);const subtotal=document.createElement('strong');subtotal.textContent=dinero(Number(p.precio)*cant);
+  bottom.append(controles,subtotal);linea.append(top,bottom);seleccionados.append(linea);
+ }
+ if(!n){const vacio=document.createElement('p');vacio.className='vacio-factura';vacio.textContent='Busca un producto y presiona Agregar para comenzar.';seleccionados.append(vacio);}
+ document.getElementById('total').textContent=dinero(total);
+ document.getElementById('confirmar').disabled=n===0;
+ renderResultados();
+}
+function preparar(){
+ const items=Object.entries(cesta).map(([id,cantidad])=>({id:Number(id),cantidad}));
+ if(!items.length){alert('Agrega productos a la factura.');return false;}
+ document.getElementById('items').value=JSON.stringify(items);
+ return confirm('¿Confirmar venta por '+document.getElementById('total').textContent+'?');
+}
+buscar.addEventListener('input',renderResultados);
+render();
+</script>
+<form class="salir-flotante no-print" method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button type="submit" aria-label="Cerrar sesión">Salir</button></form>
+<style>
 .salir-flotante{position:fixed;right:14px;bottom:14px;z-index:99;margin:0}
 .salir-flotante button{width:auto!important;min-width:72px;padding:9px 17px!important;border-radius:999px!important;background:#77401d!important;color:#fffaf4!important;border:1px solid #e6d2bf!important;box-shadow:0 5px 18px #4d2b1933;font-size:13px;line-height:1.2;font-weight:650;cursor:pointer}
 .salir-flotante button:hover{background:#995523!important}
 .salir-flotante button:focus-visible{outline:3px solid #d98a45;outline-offset:3px}
 @media(max-width:720px){.salir-flotante{right:12px;bottom:12px}.salir-flotante button{padding:10px 16px!important}}
 @media print{.salir-flotante{display:none}}
-</style></body></html>
+</style>
+</body></html>
