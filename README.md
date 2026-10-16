@@ -56,3 +56,8 @@ Python, Flask, Jinja2, PostgreSQL y Psycopg.
 Esta versión es para **pruebas locales**. El servidor de Flask no debe exponerse directamente a Internet. Antes de publicar deben configurarse HTTPS, cookies seguras, proxy, limitación de intentos de inicio de sesión, protección de secretos y acceso protegido a PostgreSQL. Supabase y Vercel **todavía no están configurados**. Los recibos son internos y no sustituyen comprobantes fiscales autorizados.
 
 El repositorio contiene exclusivamente código, migraciones, plantillas y recursos visuales. **No** incluye `\.env`, bases de datos, credenciales reales ni dependencias instaladas.
+
+## Siguiente etapa: Supabase + Vercel
+
+La integración se prepara en una rama independiente. No se ha desplegado aún.
+Revisa [la guía de despliegue](docs/DESPLIEGUE_SUPABASE_VERCEL.md) antes de migrar datos reales.
