@@ -17,6 +17,9 @@ from werkzeug.security import check_password_hash, generate_password_hash
 load_dotenv()
 
 app = Flask(__name__)
+# A stable secret is required for sessions on serverless deployments.
+if os.getenv("VERCEL") and not os.getenv("SECRET_KEY"):
+    raise RuntimeError("SECRET_KEY must be configured in Vercel environment variables")
 app.secret_key = os.getenv("SECRET_KEY") or secrets.token_hex(32)
 app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE='Lax', PERMANENT_SESSION_LIFETIME=timedelta(hours=8), MAX_CONTENT_LENGTH=1024*1024)
 if os.getenv('COOKIE_SECURE', 'false').lower() == 'true':
@@ -25,15 +28,22 @@ if os.getenv('COOKIE_SECURE', 'false').lower() == 'true':
 
 
 def conectar():
-    """Abrir una conexión con la base PostgreSQL existente."""
-    return psycopg.connect(
+    """Open PostgreSQL connection, including Supabase's transaction pooler."""
+    host = os.getenv("DATABASE_HOST", "127.0.0.1")
+    settings = dict(
         dbname=os.getenv("DATABASE_NAME", "base_de_pa-picar"),
         user=os.getenv("DATABASE_USER", "postgres"),
         password=os.getenv("DATABASE_PASSWORD", ""),
-        host=os.getenv("DATABASE_HOST", "127.0.0.1"),
+        host=host,
         port=os.getenv("DATABASE_PORT", "5432"),
-        connect_timeout=5,
+        connect_timeout=10,
+        sslmode=os.getenv("DATABASE_SSLMODE", "prefer" if host in ("127.0.0.1", "localhost") else "require"),
     )
+    # Supabase transaction pooling is suitable for short-lived serverless requests.
+    # Avoid server-side prepared statements with PgBouncer transaction mode.
+    if os.getenv("DATABASE_POOLER", "false").lower() == "true":
+        settings["prepare_threshold"] = None
+    return psycopg.connect(**settings)
 
 
 # Etapa 5: autenticación y roles. Ejecutar migracion_etapa5.sql antes de iniciar.
