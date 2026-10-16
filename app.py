@@ -150,22 +150,47 @@ def inicio():
         flash("No se pudo consultar PostgreSQL. Revisa la contraseña, el servicio y el nombre de la base.", "error")
         base_disponible = False
 
-    total_ventas = Decimal('0')
+    # Resumen diario en hora local de República Dominicana (independiente del huso del servidor).
+    resumen = {'total': Decimal('0'), 'facturas': 0, 'efectivo': Decimal('0'), 'transferencia': Decimal('0')}
+    ultimas_ventas = []
     try:
         with conectar() as conexion:
-            with conexion.cursor() as cursor:
-                cursor.execute("SELECT COALESCE(SUM(total),0) FROM ventas WHERE fecha::date = CURRENT_DATE AND estado = 'Activa'")
-                total_ventas = cursor.fetchone()[0]
+            with conexion.cursor(row_factory=dict_row) as cursor:
+                cursor.execute("""
+                    SELECT COALESCE(SUM(total),0) AS total,
+                           COUNT(*) AS facturas,
+                           COALESCE(SUM(total) FILTER (WHERE metodo_pago='Efectivo'),0) AS efectivo,
+                           COALESCE(SUM(total) FILTER (WHERE metodo_pago='Transferencia'),0) AS transferencia
+                    FROM ventas
+                    WHERE estado='Activa'
+                      AND (fecha AT TIME ZONE 'America/Santo_Domingo')::date =
+                          (CURRENT_TIMESTAMP AT TIME ZONE 'America/Santo_Domingo')::date
+                """)
+                resumen = cursor.fetchone()
+                cursor.execute("""
+                    SELECT id, fecha AT TIME ZONE 'America/Santo_Domingo' AS fecha_local,
+                           total, metodo_pago
+                    FROM ventas WHERE estado='Activa'
+                    ORDER BY fecha DESC LIMIT 5
+                """)
+                ultimas_ventas = cursor.fetchall()
     except psycopg.Error:
-        pass  # La tabla ventas se crea al ejecutar la migración.
+        app.logger.exception('No se pudo cargar el resumen de ventas')
+        flash('No se pudo consultar el resumen de ventas.', 'error')
     total_unidades = sum(item["cantidad"] or 0 for item in productos)
+    inventario_bajo = [p for p in productos if (p['cantidad'] or 0) <= 10]
     return render_template(
         "index.html",
         productos=productos,
         cantidad_productos=len(productos),
         total_unidades=total_unidades,
         base_disponible=base_disponible,
-        total_ventas=total_ventas,
+        total_ventas=resumen['total'],
+        facturas_hoy=resumen['facturas'],
+        ventas_efectivo=resumen['efectivo'],
+        ventas_transferencia=resumen['transferencia'],
+        ultimas_ventas=ultimas_ventas,
+        inventario_bajo=inventario_bajo,
     )
 
 
