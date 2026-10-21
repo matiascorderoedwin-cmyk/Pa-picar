@@ -904,11 +904,13 @@ def actualizar_usuario_web(uid):
         permisos = permisos_desde_formulario(rol)
         with conectar() as conexion:
             with conexion.cursor(row_factory=dict_row) as cursor:
-                cursor.execute('SELECT id,es_propietario FROM usuarios WHERE id=%s FOR UPDATE',(uid,))
+                cursor.execute('SELECT id,es_propietario,permiso_usuarios FROM usuarios WHERE id=%s FOR UPDATE',(uid,))
                 objetivo=cursor.fetchone()
                 if not objetivo:
                     abort(404)
                 if objetivo['es_propietario']:
+                    abort(403)
+                if objetivo['permiso_usuarios'] and not g.usuario['es_propietario']:
                     abort(403)
                 cursor.execute("""
                     UPDATE usuarios SET rol=%s,permiso_productos=%s,
@@ -934,11 +936,13 @@ def activar_usuario_web(uid):
     try:
         with conectar() as conexion:
             with conexion.cursor(row_factory=dict_row) as cursor:
-                cursor.execute('SELECT id,es_propietario FROM usuarios WHERE id=%s FOR UPDATE',(uid,))
+                cursor.execute('SELECT id,es_propietario,permiso_usuarios FROM usuarios WHERE id=%s FOR UPDATE',(uid,))
                 objetivo=cursor.fetchone()
                 if not objetivo:
                     abort(404)
                 if objetivo['es_propietario']:
+                    abort(403)
+                if objetivo['permiso_usuarios'] and not g.usuario['es_propietario']:
                     abort(403)
                 cursor.execute('UPDATE usuarios SET activo=%s WHERE id=%s',(habilitar,uid))
         flash('Cuenta activada.' if habilitar else 'Cuenta desactivada. Su sesión dejará de tener acceso.', 'success')
@@ -960,11 +964,13 @@ def clave_usuario_web(uid):
     try:
         with conectar() as conexion:
             with conexion.cursor(row_factory=dict_row) as cursor:
-                cursor.execute('SELECT id,es_propietario FROM usuarios WHERE id=%s FOR UPDATE',(uid,))
+                cursor.execute('SELECT id,es_propietario,permiso_usuarios FROM usuarios WHERE id=%s FOR UPDATE',(uid,))
                 objetivo=cursor.fetchone()
                 if not objetivo:
                     abort(404)
                 if objetivo['es_propietario']:
+                    abort(403)
+                if objetivo['permiso_usuarios'] and not g.usuario['es_propietario']:
                     abort(403)
                 cursor.execute('UPDATE usuarios SET clave_hash=%s WHERE id=%s',
                                (generate_password_hash(clave),uid))

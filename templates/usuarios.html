@@ -93,6 +93,8 @@
             <p class="aviso">Cuenta principal protegida. Sus accesos y su estado no pueden modificarse desde este apartado.</p>
           {% elif u.id == usuario_actual.id %}
             <p class="aviso">Por seguridad, tu propia cuenta no puede bloquearse ni modificar sus permisos desde aquí.</p>
+          {% elif u.permiso_usuarios and not usuario_actual.es_propietario %}
+            <p class="aviso">Esta cuenta puede gestionar usuarios. Solo el propietario puede modificarla o bloquearla.</p>
           {% else %}
             <div class="acciones-usuario">
               <form method="post" action="{{ url_for('actualizar_usuario_web',uid=u.id) }}">
