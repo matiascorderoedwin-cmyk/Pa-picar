@@ -52,7 +52,7 @@ def exigir_acceso():
     g.usuario = None
     if request.endpoint == 'static':
         return
-    if request.endpoint in ('login', 'logout'):
+    if request.endpoint in ('login', 'logout', 'pedidos_publicos', 'enviar_pedido', 'pedido_recibido'):
         return
     uid = session.get('usuario_id')
     if not uid:
@@ -352,7 +352,15 @@ def administracion():
                 productos=cursor.fetchall()
                 cursor.execute('SELECT m.id,m.fecha,m.tipo,m.cantidad,m.nota,p.nombre FROM movimientos_inventario m JOIN productos p ON p.id=m.producto_id ORDER BY m.id DESC LIMIT 50')
                 movimientos=cursor.fetchall()
-        return render_template('administracion.html',productos=productos,movimientos=movimientos)
+        with conectar() as conexion:
+            with conexion.cursor(row_factory=dict_row) as cursor:
+                cursor.execute('''SELECT p.id,p.cliente_nombre,p.cliente_telefono,p.total,p.estado,p.creado_en,
+                               COALESCE(json_agg(json_build_object('nombre',d.nombre_producto,'cantidad',d.cantidad,'precio',d.precio_unitario)
+                               ORDER BY d.id) FILTER (WHERE d.id IS NOT NULL),'[]'::json) AS detalles
+                               FROM pedidos p LEFT JOIN pedido_detalles d ON d.pedido_id=p.id
+                               GROUP BY p.id ORDER BY p.creado_en DESC LIMIT 100''')
+                pedidos=cursor.fetchall()
+        return render_template('administracion.html',productos=productos,movimientos=movimientos,pedidos=pedidos)
     except psycopg.Error:
         app.logger.exception('Error en administración')
         flash('No se pudo abrir administración. Ejecuta migracion_etapa3.sql.', 'error')
@@ -513,6 +521,141 @@ def reportes():
         app.logger.exception('Error cargando reportes')
         flash('No se pudieron consultar los reportes. Ejecuta la migración de Etapa 4.', 'error')
         return redirect(url_for('inicio'))
+
+# Pedidos públicos: no requieren iniciar sesión. Los datos se validan en servidor.
+@app.get('/pedir')
+def pedidos_publicos():
+    try:
+        with conectar() as conexion:
+            with conexion.cursor(row_factory=dict_row) as cursor:
+                cursor.execute('SELECT id,nombre,precio,cantidad FROM productos WHERE activo=TRUE AND cantidad>0 ORDER BY nombre,id')
+                productos=cursor.fetchall()
+        return render_template('pedir.html',productos=productos)
+    except psycopg.Error:
+        app.logger.exception('Error mostrando catálogo público')
+        abort(503)
+
+
+@app.post('/pedir')
+def enviar_pedido():
+    validar_csrf()
+    if request.form.get('sitio_web', ''):
+        abort(400)
+    nombre=request.form.get('nombre','').strip()
+    telefono=request.form.get('telefono','').strip()
+    if not 2<=len(nombre)<=100 or not 7<=len(telefono)<=30 or not all(c.isdigit() or c in '+- ()' for c in telefono):
+        flash('Revisa tu nombre y teléfono.', 'error')
+        return redirect(url_for('pedidos_publicos'))
+    try:
+        items=json.loads(request.form.get('items','[]'))
+        if not isinstance(items,list) or not 1<=len(items)<=30:
+            raise ValueError('Selecciona productos para el pedido.')
+        cantidades={}
+        for item in items:
+            if not isinstance(item,dict) or type(item.get('id')) is not int or type(item.get('cantidad')) is not int:
+                raise ValueError('Productos inválidos.')
+            pid,cant=item['id'],item['cantidad']
+            if pid<1 or not 1<=cant<=100:
+                raise ValueError('Cantidad inválida.')
+            cantidades[pid]=cantidades.get(pid,0)+cant
+        if any(q>100 for q in cantidades.values()):
+            raise ValueError('Cantidad excesiva.')
+        with conectar() as conexion:
+            with conexion.cursor(row_factory=dict_row) as cursor:
+                cursor.execute('SELECT id,nombre,precio,cantidad,activo FROM productos WHERE id=ANY(%s) ORDER BY id', (list(cantidades),))
+                productos=cursor.fetchall()
+                if len(productos)!=len(cantidades):
+                    raise ValueError('Un producto ya no está disponible.')
+                total=Decimal('0')
+                detalles=[]
+                for producto in productos:
+                    q=cantidades[producto['id']]
+                    if not producto['activo'] or producto['cantidad']<q:
+                        raise ValueError('No hay suficientes unidades de '+producto['nombre'])
+                    subtotal=producto['precio']*q
+                    total+=subtotal
+                    detalles.append((producto,q,subtotal))
+                cursor.execute('INSERT INTO pedidos(cliente_nombre,cliente_telefono,total,total_estimado,estado) VALUES (%s,%s,%s,%s,%s) RETURNING id', (nombre,telefono,total,total,'Pendiente'))
+                pedido_id=cursor.fetchone()['id']
+                for producto,q,subtotal in detalles:
+                    cursor.execute('INSERT INTO pedido_detalles(pedido_id,producto_id,nombre_producto,cantidad,precio_unitario,subtotal) VALUES (%s,%s,%s,%s,%s,%s)',(pedido_id,producto['id'],producto['nombre'],q,producto['precio'],subtotal))
+        return redirect(url_for('pedido_recibido',pedido_id=pedido_id))
+    except (ValueError,TypeError,json.JSONDecodeError) as exc:
+        flash(str(exc),'error')
+    except psycopg.Error:
+        app.logger.exception('Error guardando pedido público')
+        flash('No se pudo registrar el pedido. Intenta de nuevo.', 'error')
+    return redirect(url_for('pedidos_publicos'))
+
+
+@app.get('/pedido-recibido/<int:pedido_id>')
+def pedido_recibido(pedido_id):
+    # No mostrar datos personales ni detalles de pedidos por ID público.
+    return render_template('pedido_recibido.html')
+
+
+@app.post('/administracion/pedidos/<int:pedido_id>/<accion>')
+@solo_admin
+def procesar_pedido(pedido_id, accion):
+    validar_csrf()
+    if accion not in ('aceptar', 'rechazar', 'cancelar', 'pagar'):
+        abort(404)
+    try:
+        with conectar() as conexion:
+            with conexion.cursor(row_factory=dict_row) as cursor:
+                cursor.execute('SELECT id,estado FROM pedidos WHERE id=%s FOR UPDATE', (pedido_id,))
+                pedido=cursor.fetchone()
+                if pedido is None:
+                    abort(404)
+                estado=pedido['estado']
+                if accion in ('aceptar','rechazar') and estado != 'Pendiente':
+                    raise ValueError('Solo se pueden aceptar o rechazar pedidos pendientes.')
+                if accion in ('pagar','cancelar') and estado != 'Aceptado':
+                    raise ValueError('Solo se pueden cobrar o cancelar pedidos aceptados.')
+                if accion=='rechazar':
+                    cursor.execute("UPDATE pedidos SET estado='Rechazado',procesado_en=now() WHERE id=%s", (pedido_id,))
+                    mensaje='Pedido rechazado.'
+                else:
+                    cursor.execute('SELECT producto_id,cantidad,nombre_producto,precio_unitario FROM pedido_detalles WHERE pedido_id=%s ORDER BY producto_id', (pedido_id,))
+                    detalles=cursor.fetchall()
+                    if not detalles or any(d['producto_id'] is None for d in detalles):
+                        raise ValueError('Pedido sin productos válidos.')
+                    if accion=='aceptar':
+                        # Reserva de existencias. No crea venta ni ingresos.
+                        for d in detalles:
+                            cursor.execute('UPDATE productos SET cantidad=cantidad-%s WHERE id=%s AND activo=TRUE AND cantidad >= %s RETURNING id', (d['cantidad'],d['producto_id'],d['cantidad']))
+                            if cursor.fetchone() is None:
+                                raise ValueError('No hay existencias suficientes para '+d['nombre_producto'])
+                        cursor.execute("UPDATE pedidos SET estado='Aceptado',procesado_en=now() WHERE id=%s",(pedido_id,))
+                        mensaje='Pedido aceptado. Inventario reservado; aún no se registró una venta.'
+                    elif accion=='cancelar':
+                        # Devuelve la reserva; operación atómica con cambio de estado.
+                        for d in detalles:
+                            cursor.execute('UPDATE productos SET cantidad=cantidad+%s WHERE id=%s RETURNING id',(d['cantidad'],d['producto_id']))
+                            if cursor.fetchone() is None:
+                                raise ValueError('No se pudo devolver el inventario: producto inexistente.')
+                        cursor.execute("UPDATE pedidos SET estado='Cancelado',procesado_en=now() WHERE id=%s",(pedido_id,))
+                        mensaje='Pedido cancelado. Unidades devueltas al inventario.'
+                    else:
+                        metodo=request.form.get('metodo_pago','')
+                        if metodo not in ('Efectivo','Transferencia'):
+                            raise ValueError('Selecciona un método de pago válido.')
+                        total=sum((d['precio_unitario']*d['cantidad'] for d in detalles),Decimal('0'))
+                        cursor.execute('INSERT INTO ventas(metodo_pago,total) VALUES (%s,%s) RETURNING id',(metodo,total))
+                        venta_id=cursor.fetchone()['id']
+                        for d in detalles:
+                            subtotal=d['precio_unitario']*d['cantidad']
+                            cursor.execute('INSERT INTO venta_detalles(venta_id,producto_id,nombre_producto,cantidad,precio_unitario,subtotal) VALUES (%s,%s,%s,%s,%s,%s)',(venta_id,d['producto_id'],d['nombre_producto'],d['cantidad'],d['precio_unitario'],subtotal))
+                        # El inventario ya fue descontado al aceptar el pedido.
+                        cursor.execute("UPDATE pedidos SET estado='Pagado',venta_id=%s,procesado_en=now() WHERE id=%s",(venta_id,pedido_id))
+                        mensaje='Pago confirmado. Venta #'+str(venta_id)+' registrada.'
+        flash(mensaje,'success')
+    except ValueError as exc:
+        flash(str(exc),'error')
+    except psycopg.Error:
+        app.logger.exception('Error procesando pedido')
+        flash('No se pudo procesar el pedido.','error')
+    return redirect(url_for('administracion')+'#pedidos')
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
