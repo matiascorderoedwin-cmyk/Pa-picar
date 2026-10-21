@@ -1,1 +1,240 @@
-<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Haz tu pedido · Pa Picar</title><style>*{box-sizing:border-box}body{margin:0;background:#f7efe5;color:#63391f;font-family:system-ui,Arial,sans-serif}.wrap{max-width:660px;margin:auto;padding:18px}.logo{display:block;width:180px;max-width:65%;margin:12px auto}h1{text-align:center;font-size:28px}.card{background:#fffaf5;border:1px solid #e5cbb7;border-radius:18px;padding:18px;margin:14px 0;box-shadow:0 6px 24px #77401d0b}label{display:block;font-weight:650;margin:12px 0 6px}input{font:inherit;border:1px solid #d8b99e;border-radius:10px;padding:12px;width:100%;min-width:0}.item{display:grid;grid-template-columns:minmax(0,1fr) 78px;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid #ead8ca}.item:last-child{border:0}.item small{display:block;color:#88624c;margin-top:5px}.item input{text-align:center}.total{font-size:22px;font-weight:750;text-align:right}.btn{background:#77401d;color:white;font:inherit;font-weight:700;padding:14px;border:0;border-radius:10px;width:100%;cursor:pointer}.muted{color:#805d46;font-size:14px}.error{background:#ffe6df;color:#922b18;padding:12px;border-radius:10px}</style></head><body><div class="wrap"><img class="logo" src="{{ url_for('static',filename='logo-pa-picar.png') }}" alt="Pa Picar"><h1>Haz tu pedido</h1><p style="text-align:center">Selecciona tus picaderas. Confirmaremos tu pedido cuando lo revisemos.</p>{% with mensajes=get_flashed_messages(with_categories=true) %}{% for categoria,mensaje in mensajes %}<p class="error">{{ mensaje }}</p>{% endfor %}{% endwith %}<form method="post" action="{{ url_for('enviar_pedido') }}" onsubmit="return preparar()"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="items" id="items"><div style="position:absolute;left:-9999px" aria-hidden="true"><input name="sitio_web" tabindex="-1" autocomplete="off"></div><section class="card"><h2>Productos</h2><label for="buscar">Buscar producto</label><input id="buscar" type="search" placeholder="Quipes, pastelitos..." oninput="filtrar()">{% for p in productos %}<div class="item" data-nombre="{{ p.nombre|lower }}"><div><strong>{{ p.nombre }}</strong><small>RD$ {{ '%.2f'|format(p.precio) }} · Disponibles: {{ p.cantidad }}</small></div><input type="number" aria-label="Cantidad de {{ p.nombre }}" min="0" max="{{ p.cantidad if p.cantidad < 100 else 100 }}" value="0" inputmode="numeric" data-id="{{ p.id }}" data-precio="{{ p.precio }}" onchange="actualizar()" oninput="actualizar()"></div>{% else %}<p>No hay productos disponibles.</p>{% endfor %}</section><section class="card"><h2>Datos del comprador</h2><label for="nombre">Tu nombre</label><input id="nombre" name="nombre" required minlength="2" maxlength="100" autocomplete="name"><label for="telefono">Teléfono de contacto</label><input id="telefono" name="telefono" type="tel" required minlength="7" maxlength="30" autocomplete="tel"><p class="total" id="total">Total estimado: RD$ 0.00</p><p class="muted">El envío no realiza un cobro ni reserva inventario. El negocio confirmará la disponibilidad y el pago.</p><button class="btn" type="submit">Enviar pedido</button></section></form></div><script>function filtrar(){const q=document.getElementById('buscar').value.toLocaleLowerCase();document.querySelectorAll('.item').forEach(el=>el.hidden=!el.dataset.nombre.includes(q))}function actualizar(){let t=0;document.querySelectorAll('[data-id]').forEach(el=>{const n=Number(el.value)||0;if(n>0)t+=n*Number(el.dataset.precio)});document.getElementById('total').textContent='Total estimado: RD$ '+t.toLocaleString('es-DO',{minimumFractionDigits:2,maximumFractionDigits:2})}function preparar(){const items=[];for(const el of document.querySelectorAll('[data-id]')){const n=Number(el.value);if(!Number.isInteger(n)||n<0||n>Number(el.max)){alert('Revisa las cantidades.');return false}if(n>0)items.push({id:Number(el.dataset.id),cantidad:n})}if(!items.length){alert('Selecciona al menos un producto.');return false}document.getElementById('items').value=JSON.stringify(items);return true}</script></body></html>
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Haz tu pedido · Pa Picar</title>
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f7efe5; color: #63391f; font: 14px/1.45 system-ui, Arial, sans-serif; }
+    .wrap { width: min(100%, 650px); margin: 0 auto; padding: 16px 14px 26px; }
+    .cabecera { text-align: center; margin-bottom: 14px; }
+    .logo { display: block; width: 126px; max-width: 48%; height: auto; margin: 0 auto 4px; }
+    h1 { font-size: 25px; margin: 0 0 3px; color: #824319; }
+    h2 { font-size: 17px; margin: 0 0 10px; }
+    p { margin: 6px 0; }
+    .subtitulo, .ayuda { color: #835c43; font-size: 12px; }
+    .card { background: #fffaf5; border: 1px solid #e5cbb7; border-radius: 14px; padding: 14px; margin-bottom: 11px; }
+    label { display: block; font-size: 13px; font-weight: 650; margin: 9px 0 5px; }
+    input { width: 100%; min-width: 0; border: 1px solid #d8b99e; background: white; color: #63391f; padding: 10px 11px; border-radius: 9px; font: inherit; }
+    input:focus-visible, button:focus-visible { outline: 3px solid #e7a66d; outline-offset: 2px; }
+    button { border: 0; border-radius: 9px; background: #77401d; color: #fffaf4; font: inherit; font-weight: 700; cursor: pointer; }
+    button:disabled { opacity: .65; cursor: wait; }
+    .buscador { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-bottom: 8px; }
+    .buscar-btn { padding: 0 15px; min-height: 41px; }
+    .productos { max-height: 300px; overflow-y: auto; }
+    .producto { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 2px; border-bottom: 1px solid #ecdbce; }
+    .producto:last-child { border-bottom: 0; }
+    .producto[hidden] { display: none; }
+    .producto-info { min-width: 0; }
+    .nombre { font-size: 13px; font-weight: 750; overflow-wrap: anywhere; }
+    .precio { font-size: 12px; color: #835c43; }
+    .agregar { padding: 7px 13px; flex-shrink: 0; }
+    .vacio { color: #835c43; text-align: center; padding: 14px; border: 1px dashed #e5cbb7; border-radius: 9px; }
+    .linea-carrito { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid #ecdbce; }
+    .linea-carrito:last-child { border-bottom: 0; }
+    .detalle { min-width: 0; }
+    .cantidad-controles { display: flex; align-items: center; gap: 7px; flex-shrink: 0; }
+    .cantidad-btn { width: 30px; height: 30px; font-size: 18px; line-height: 1; }
+    .numero { min-width: 18px; text-align: center; font-weight: 750; }
+    .total { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding-top: 10px; font-size: 17px; font-weight: 800; }
+    .enviar { width: 100%; padding: 12px; margin-top: 12px; font-size: 14px; }
+    .error { background: #ffe6df; color: #852d1b; border-radius: 9px; padding: 10px; margin-bottom: 10px; }
+    .trampa { position: absolute; left: -10000px; height: 1px; width: 1px; overflow: hidden; }
+    @media (max-width: 440px) {
+      .wrap { padding: 10px 10px 22px; }
+      .card { padding: 12px; }
+      .productos { max-height: 260px; }
+      .logo { width: 112px; }
+      .cabecera { margin-bottom: 10px; }
+      h1 { font-size: 23px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header class="cabecera">
+      <img class="logo" src="{{ url_for('static', filename='logo-pa-picar.png') }}" alt="Pa Picar">
+      <h1>Haz tu pedido</h1>
+      <p class="subtitulo">Elige tus picaderas. Te contactaremos para confirmar el pedido.</p>
+    </header>
+
+    {% with mensajes = get_flashed_messages(with_categories=true) %}
+      {% for categoria, mensaje in mensajes %}
+        <p class="error" role="alert">{{ mensaje }}</p>
+      {% endfor %}
+    {% endwith %}
+
+    <section class="card" aria-labelledby="titulo-productos">
+      <h2 id="titulo-productos">Productos</h2>
+      <!-- Buscador fuera del formulario: Enter nunca envía un pedido. -->
+      <div class="buscador" role="search">
+        <input id="busqueda" type="search" placeholder="Buscar quipes, pastelitos…" aria-label="Buscar producto" autocomplete="off">
+        <button id="boton-buscar" class="buscar-btn" type="button">Buscar</button>
+      </div>
+      <div id="lista-productos" class="productos">
+        {% for p in productos %}
+          <div class="producto" data-id="{{ p.id }}" data-nombre="{{ p.nombre }}" data-precio="{{ p.precio }}" data-max="{{ p.cantidad if p.cantidad < 100 else 100 }}">
+            <div class="producto-info">
+              <div class="nombre">{{ p.nombre }}</div>
+              <div class="precio">RD$ {{ '%.2f'|format(p.precio) }}</div>
+            </div>
+            <button type="button" class="agregar" aria-label="Agregar {{ p.nombre }} al pedido">Agregar</button>
+          </div>
+        {% else %}
+          <p class="vacio">No hay productos disponibles en este momento.</p>
+        {% endfor %}
+      </div>
+      <p id="sin-resultados" class="vacio" hidden>No encontramos productos con ese nombre.</p>
+    </section>
+
+    <form id="form-pedido" method="post" action="{{ url_for('enviar_pedido') }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <input type="hidden" name="items" id="items">
+      <div class="trampa" aria-hidden="true"><input name="sitio_web" tabindex="-1" autocomplete="off"></div>
+      <section class="card" aria-labelledby="titulo-pedido">
+        <h2 id="titulo-pedido">Tu pedido</h2>
+        <div id="carrito">
+          <p class="vacio">Todavía no has seleccionado productos.</p>
+        </div>
+        <div class="total"><span>Total estimado</span><span id="total">RD$ 0.00</span></div>
+      </section>
+      <section class="card" aria-labelledby="titulo-cliente">
+        <h2 id="titulo-cliente">Tus datos</h2>
+        <label for="nombre">Nombre</label>
+        <input id="nombre" name="nombre" required minlength="2" maxlength="100" autocomplete="name">
+        <label for="telefono">Teléfono de contacto</label>
+        <input id="telefono" name="telefono" type="tel" required minlength="7" maxlength="30" autocomplete="tel">
+        <p class="ayuda">El pedido no genera un cobro ni reserva inventario. Confirmaremos disponibilidad y pago.</p>
+        <button id="enviar" type="submit" class="enviar">Enviar pedido</button>
+      </section>
+    </form>
+  </main>
+  <script>
+    (() => {
+      const productos = [...document.querySelectorAll('.producto')];
+      const carrito = new Map();
+      const lista = document.getElementById('carrito');
+      const form = document.getElementById('form-pedido');
+      const busqueda = document.getElementById('busqueda');
+      const moneda = valor => 'RD$ ' + valor.toLocaleString('es-DO', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+      function pintarCarrito() {
+        lista.replaceChildren();
+        let total = 0;
+        if (!carrito.size) {
+          const mensaje = document.createElement('p');
+          mensaje.className = 'vacio';
+          mensaje.textContent = 'Todavía no has seleccionado productos.';
+          lista.append(mensaje);
+        }
+        for (const item of carrito.values()) {
+          total += item.cantidad * item.precio;
+          const fila = document.createElement('div');
+          fila.className = 'linea-carrito';
+          const detalle = document.createElement('div');
+          detalle.className = 'detalle';
+          const nombre = document.createElement('div');
+          nombre.className = 'nombre';
+          nombre.textContent = item.nombre;
+          const subtotal = document.createElement('div');
+          subtotal.className = 'precio';
+          subtotal.textContent = moneda(item.precio * item.cantidad);
+          detalle.append(nombre, subtotal);
+          const controles = document.createElement('div');
+          controles.className = 'cantidad-controles';
+          for (const [simbolo, cambio, etiqueta] of [['−', -1, 'Quitar una unidad de '], ['+', 1, 'Agregar una unidad de ']]) {
+            const boton = document.createElement('button');
+            boton.type = 'button';
+            boton.className = 'cantidad-btn';
+            boton.textContent = simbolo;
+            boton.setAttribute('aria-label', etiqueta + item.nombre);
+            boton.addEventListener('click', () => {
+              item.cantidad += cambio;
+              if (item.cantidad <= 0) carrito.delete(item.id);
+              else if (item.cantidad > item.max) {
+                item.cantidad = item.max;
+                alert('No se pueden agregar más unidades de este producto.');
+              }
+              pintarCarrito();
+            });
+            if (cambio > 0 && item.cantidad >= item.max) boton.disabled = true;
+            controles.append(boton);
+            if (cambio < 0) {
+              const cuenta = document.createElement('span');
+              cuenta.className = 'numero';
+              cuenta.textContent = String(item.cantidad);
+              controles.append(cuenta);
+            }
+          }
+          fila.append(detalle, controles);
+          lista.append(fila);
+        }
+        document.getElementById('total').textContent = moneda(total);
+      }
+
+      for (const producto of productos) {
+        producto.querySelector('.agregar').addEventListener('click', () => {
+          const id = Number(producto.dataset.id);
+          const existente = carrito.get(id);
+          if (existente) {
+            if (existente.cantidad >= existente.max) {
+              alert('No se pueden agregar más unidades de este producto.');
+              return;
+            }
+            existente.cantidad++;
+          } else {
+            if (carrito.size >= 30) {
+              alert('Un pedido admite un máximo de 30 productos distintos.');
+              return;
+            }
+            carrito.set(id, {
+              id,
+              nombre: producto.dataset.nombre,
+              precio: Number(producto.dataset.precio),
+              cantidad: 1,
+              max: Number(producto.dataset.max)
+            });
+          }
+          pintarCarrito();
+        });
+      }
+
+      function buscar() {
+        const texto = busqueda.value.trim().toLocaleLowerCase('es');
+        let encontrados = 0;
+        for (const producto of productos) {
+          const visible = producto.dataset.nombre.toLocaleLowerCase('es').includes(texto);
+          producto.hidden = !visible;
+          if (visible) encontrados++;
+        }
+        document.getElementById('sin-resultados').hidden = encontrados !== 0 || productos.length === 0;
+      }
+
+      document.getElementById('boton-buscar').addEventListener('click', buscar);
+      busqueda.addEventListener('input', buscar);
+      busqueda.addEventListener('keydown', evento => {
+        if (evento.key === 'Enter') {
+          evento.preventDefault();
+          buscar();
+        }
+      });
+
+      form.addEventListener('submit', evento => {
+        if (carrito.size === 0) {
+          evento.preventDefault();
+          alert('Agrega al menos un producto antes de enviar el pedido.');
+          return;
+        }
+        document.getElementById('items').value = JSON.stringify(
+          [...carrito.values()].map(({id, cantidad}) => ({id, cantidad}))
+        );
+        const enviar = document.getElementById('enviar');
+        enviar.disabled = true;
+        enviar.textContent = 'Enviando pedido…';
+      });
+    })();
+  </script>
+</body>
+</html>
