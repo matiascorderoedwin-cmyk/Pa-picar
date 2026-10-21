@@ -1,11 +1,20 @@
 <nav class="nav-picar nav-principal no-print" aria-label="Secciones de Pa Picar">
-  <a href="{{ url_for('inicio') }}" class="nav-logo" aria-label="Pa Picar, productos">
-    <img src="{{ url_for('static', filename='logo-pa-picar.png') }}" alt="Pa Picar">
+  <a href="{{ url_for('panel') }}" class="nav-logo" aria-label="Pa Picar, inicio autorizado">
+    <img src="{{ url_for('static',filename='logo-pa-picar.png') }}" alt="Pa Picar">
   </a>
-  <a href="{{ url_for('inicio') }}" class="{{ 'activo' if request.endpoint == 'inicio' else '' }}">Productos y catálogo</a>
-  <a href="{{ url_for('listado_ventas') }}" class="{{ 'activo' if request.endpoint in ('listado_ventas', 'facturar', 'reportes', 'recibo') else '' }}">Ventas</a>
-  {% if usuario_actual and usuario_actual.rol == 'administrador' %}
+  {% if usuario_actual and usuario_actual.permiso_productos %}
+    <a href="{{ url_for('inicio') }}" class="{{ 'activo' if request.endpoint == 'inicio' else '' }}">Productos y catálogo</a>
+  {% endif %}
+  {% if usuario_actual and usuario_actual.permiso_ventas %}
+    <a href="{{ url_for('listado_ventas') }}" class="{{ 'activo' if request.endpoint in ('listado_ventas','facturar','recibo','crear_venta') else '' }}">Ventas</a>
+  {% endif %}
+  {% if usuario_actual and usuario_actual.permiso_pedidos %}
     <a href="{{ url_for('pedidos') }}" class="{{ 'activo' if request.endpoint in ('pedidos','procesar_pedido') else '' }}">Pedidos</a>
-    <a href="{{ url_for('administracion') }}" class="{{ 'activo' if request.endpoint == 'administracion' else '' }}">Administración</a>
+  {% endif %}
+  {% if usuario_actual and usuario_actual.rol == 'administrador' and usuario_actual.permiso_administracion %}
+    <a href="{{ url_for('administracion') }}" class="{{ 'activo' if request.endpoint in ('administracion','usuarios_admin') else '' }}">Administración</a>
+  {% endif %}
+  {% if usuario_actual and usuario_actual.permiso_reportes and not usuario_actual.permiso_ventas %}
+    <a href="{{ url_for('reportes') }}" class="{{ 'activo' if request.endpoint == 'reportes' else '' }}">Reportes</a>
   {% endif %}
 </nav>

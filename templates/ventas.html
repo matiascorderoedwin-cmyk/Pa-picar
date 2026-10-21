@@ -48,7 +48,7 @@
         <h2 id="pagos-hoy">Ingresos de hoy por método de pago</h2>
         <p class="desglose-ayuda">Solo ventas activas registradas hoy, hora de República Dominicana.</p>
       </div>
-      {% if usuario_actual.rol == 'administrador' %}
+      {% if usuario_actual.permiso_reportes %}
         <a class="desglose-reportes" href="{{ url_for('reportes') }}">Ver reportes →</a>
       {% endif %}
     </div>
@@ -92,7 +92,7 @@
       {% else %}<tr><td colspan="5">No hay facturas en este período.</td></tr>{% endfor %}</tbody>
     </table>
   </section>
-  {% if usuario_actual.rol == 'administrador' %}<p><a href="{{ url_for('reportes') }}">Ver reportes detallados de 30 días →</a></p>{% endif %}
+  {% if usuario_actual.permiso_reportes %}<p><a href="{{ url_for('reportes') }}">Ver reportes detallados de 30 días →</a></p>{% endif %}
   <p style="color:#85634e;font-size:12px">Los totales corresponden únicamente a ventas activas. Las facturas anuladas permanecen en el historial.</p>
 </main>
 <form class="salir-flotante no-print" method="post" action="{{ url_for('logout') }}">

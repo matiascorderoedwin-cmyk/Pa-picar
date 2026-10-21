@@ -46,28 +46,97 @@ def conectar():
     return psycopg.connect(**settings)
 
 
-# Etapa 5: autenticación y roles. Ejecutar migracion_etapa5.sql antes de iniciar.
+# Permisos de secciones: comprobados en el servidor en cada petición.
+# Los cambios hechos por un administrador surten efecto en la próxima petición.
+PERMISOS = ('productos', 'ventas', 'pedidos', 'administracion', 'reportes', 'usuarios')
+ETIQUETAS_PERMISOS = (
+    ('productos', 'Productos y catálogo'),
+    ('ventas', 'Ventas y facturas'),
+    ('pedidos', 'Pedidos de clientes'),
+    ('administracion', 'Administración e inventario'),
+    ('reportes', 'Reportes detallados'),
+    ('usuarios', 'Gestionar cuentas de usuario'),
+)
+RUTAS_PERMISOS = {
+    'inicio': 'productos',
+    'agregar_producto': 'productos',
+    'facturar': 'ventas',
+    'crear_venta': 'ventas',
+    'listado_ventas': 'ventas',
+    'recibo': 'ventas',
+    'anular_venta': 'ventas',
+    'pedidos': 'pedidos',
+    'procesar_pedido': 'pedidos',
+    'administracion': 'administracion',
+    'editar_producto': 'administracion',
+    'movimiento_producto': 'administracion',
+    'cambiar_estado_producto': 'administracion',
+    'reportes': 'reportes',
+    'usuarios_admin': 'usuarios',
+    'crear_usuario_web': 'usuarios',
+    'actualizar_usuario_web': 'usuarios',
+    'activar_usuario_web': 'usuarios',
+    'clave_usuario_web': 'usuarios',
+}
+RUTAS_SOLO_ADMIN = {
+    'agregar_producto','administracion','editar_producto',
+    'movimiento_producto','cambiar_estado_producto','anular_venta',
+    'usuarios_admin','crear_usuario_web','actualizar_usuario_web',
+    'activar_usuario_web','clave_usuario_web',
+}
+RUTAS_GESTOR = {
+    'usuarios_admin','crear_usuario_web','actualizar_usuario_web',
+    'activar_usuario_web','clave_usuario_web',
+}
+
+def puede_gestionar_usuarios(usuario):
+    return bool(
+        usuario and usuario['rol'] == 'administrador'
+        and usuario['permiso_administracion'] and usuario['permiso_usuarios']
+    )
+
 @app.before_request
 def exigir_acceso():
     g.usuario = None
-    if request.endpoint == 'static':
+    endpoint = request.endpoint
+    if endpoint == 'static':
         return
-    if request.endpoint in ('login', 'logout', 'pedidos_publicos', 'enviar_pedido', 'pedido_recibido'):
+    if endpoint in ('login', 'logout', 'pedidos_publicos', 'enviar_pedido', 'pedido_recibido'):
         return
+    if endpoint is None:
+        abort(404)
     uid = session.get('usuario_id')
     if not uid:
         return redirect(url_for('login'))
     try:
         with conectar() as conexion:
             with conexion.cursor(row_factory=dict_row) as cursor:
-                cursor.execute('SELECT id, usuario, rol FROM usuarios WHERE id=%s AND activo=TRUE', (uid,))
+                cursor.execute(
+                    """SELECT id, usuario, rol, activo,
+                              permiso_productos, permiso_ventas, permiso_pedidos,
+                              permiso_administracion, permiso_reportes,
+                              permiso_usuarios, es_propietario
+                       FROM usuarios WHERE id=%s AND activo=TRUE""",
+                    (uid,)
+                )
                 g.usuario = cursor.fetchone()
     except psycopg.Error:
-        app.logger.exception('Error verificando sesión')
+        app.logger.exception('Error verificando sesión y permisos')
         abort(503)
     if g.usuario is None:
         session.clear()
         return redirect(url_for('login'))
+
+    if endpoint == 'panel':
+        return
+    permiso = RUTAS_PERMISOS.get(endpoint)
+    # Las rutas internas nuevas deben declarar explícitamente su permiso.
+    if permiso is None or not g.usuario['permiso_' + permiso]:
+        abort(403)
+    if endpoint in RUTAS_SOLO_ADMIN and g.usuario['rol'] != 'administrador':
+        abort(403)
+    if endpoint in RUTAS_GESTOR and not puede_gestionar_usuarios(g.usuario):
+        abort(403)
 
 def solo_admin(fn):
     @wraps(fn)
@@ -77,15 +146,43 @@ def solo_admin(fn):
         return fn(*args, **kwargs)
     return protegido
 
+def solo_gestor_usuarios(fn):
+    @wraps(fn)
+    def protegido(*args, **kwargs):
+        if not puede_gestionar_usuarios(g.usuario):
+            abort(403)
+        return fn(*args, **kwargs)
+    return protegido
+
 @app.context_processor
 def usuario_actual():
-    return {'usuario_actual': getattr(g, 'usuario', None)}
+    usuario = getattr(g, 'usuario', None)
+    return {
+        'usuario_actual': usuario,
+        'puede_gestionar_usuarios': puede_gestionar_usuarios(usuario),
+    }
+
+@app.get('/panel')
+def panel():
+    """Abre la primera sección autorizada después de iniciar sesión."""
+    for endpoint, permiso in (
+        ('inicio','productos'),
+        ('listado_ventas','ventas'),
+        ('pedidos','pedidos'),
+        ('administracion','administracion'),
+        ('reportes','reportes')
+    ):
+        if g.usuario['permiso_' + permiso]:
+            if endpoint == 'administracion' and g.usuario['rol'] != 'administrador':
+                continue
+            return redirect(url_for(endpoint))
+    return render_template('sin_acceso.html'), 403
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'GET':
         if session.get('usuario_id'):
-            return redirect(url_for('inicio'))
+            return redirect(url_for('panel'))
         return render_template('login.html')
     validar_csrf()
     usuario = request.form.get('usuario', '').strip()
@@ -106,7 +203,7 @@ def login():
         session.permanent = True
         session['usuario_id'] = registro['id']
         session['csrf'] = secrets.token_hex(24)
-        return redirect(url_for('inicio'))
+        return redirect(url_for('panel'))
     flash('Usuario o contraseña incorrectos.', 'error')
     return render_template('login.html'), 401
 
@@ -118,19 +215,27 @@ def logout():
 
 @app.cli.command('crear-usuario')
 def crear_usuario():
-    """Crear usuario con solicitud interactiva de contraseña (sin exponerla en consola)."""
+    """Alta por terminal para mantenimiento; la creación normal se hace en Administración."""
     import click
     nombre = click.prompt('Usuario').strip()
     rol = click.prompt('Rol', type=click.Choice(['administrador', 'vendedor']))
     clave = click.prompt('Contraseña (mínimo 12 caracteres)', hide_input=True, confirmation_prompt=True)
-    if not (3 <= len(nombre) <= 80) or len(clave) < 12:
-        raise click.ClickException('Usuario de 3-80 caracteres y contraseña de 12 o más caracteres.')
+    if not (3 <= len(nombre) <= 80) or not (12 <= len(clave) <= 128):
+        raise click.ClickException('Usuario de 3-80 caracteres y contraseña de 12-128 caracteres.')
+    habilitado = rol == 'administrador'
     try:
         with conectar() as conexion:
             with conexion.cursor() as cursor:
-                cursor.execute('INSERT INTO usuarios(usuario,clave_hash,rol) VALUES (%s,%s,%s)', (nombre,generate_password_hash(clave),rol))
+                cursor.execute("""
+                    INSERT INTO usuarios(
+                        usuario,clave_hash,rol,permiso_productos,permiso_ventas,
+                        permiso_pedidos,permiso_administracion,permiso_reportes,
+                        permiso_usuarios,es_propietario)
+                    VALUES (%s,%s,%s,TRUE,TRUE,%s,%s,%s,FALSE,FALSE)
+                """, (nombre, generate_password_hash(clave), rol,
+                      habilitado, habilitado, habilitado))
     except psycopg.Error as exc:
-        raise click.ClickException('No se pudo crear el usuario. Verifica la migración y que no exista ese nombre.') from exc
+        raise click.ClickException('No se pudo crear el usuario. Revisa la base de datos.') from exc
     click.echo('Usuario creado correctamente.')
 
 @app.get("/")
@@ -352,7 +457,6 @@ def listado_ventas():
 
 
 @app.get('/pedidos')
-@solo_admin
 def pedidos():
     """Panel de pedidos separado del inventario, con filtros por estado."""
     estados = ('Pendiente', 'Aceptado', 'Rechazado', 'Pagado', 'Cancelado')
@@ -543,7 +647,6 @@ def anular_venta(venta_id):
 
 
 @app.get('/reportes')
-@solo_admin
 def reportes():
     try:
         with conectar() as conexion:
@@ -647,7 +750,6 @@ def pedido_recibido(pedido_id):
 
 
 @app.post('/administracion/pedidos/<int:pedido_id>/<accion>')
-@solo_admin
 def procesar_pedido(pedido_id, accion):
     validar_csrf()
     if accion not in ('aceptar', 'rechazar', 'cancelar', 'pagar'):
@@ -715,6 +817,162 @@ def procesar_pedido(pedido_id, accion):
         flash('No se pudo procesar el pedido.','error')
     return redirect(url_for('pedidos', estado={'aceptar':'Aceptado','rechazar':'Rechazado',
                                                 'cancelar':'Cancelado','pagar':'Pagado'}[accion]))
+
+# Administración de usuarios: solo administradores autorizados pueden gestionar
+# cuentas. El propietario original no se puede editar ni desactivar desde esta UI.
+def permisos_desde_formulario(rol):
+    if rol not in ('administrador', 'vendedor'):
+        raise ValueError('Selecciona un tipo de usuario válido.')
+    permisos = {clave: request.form.get('permiso_' + clave) == 'on'
+                for clave in PERMISOS}
+    if rol == 'vendedor' and (permisos['administracion'] or permisos['usuarios']):
+        raise ValueError('Para dar acceso a Administración, selecciona el rol administrador.')
+    if permisos['usuarios'] and not permisos['administracion']:
+        raise ValueError('Gestionar usuarios requiere el acceso a Administración.')
+    if permisos['usuarios'] and not g.usuario['es_propietario']:
+        raise ValueError('Solo el propietario puede delegar la gestión de usuarios.')
+    for clave, permitido in permisos.items():
+        if permitido and not g.usuario['permiso_' + clave]:
+            raise ValueError('No puedes otorgar un permiso que no tienes.')
+    return permisos
+
+@app.get('/administracion/usuarios')
+@solo_gestor_usuarios
+def usuarios_admin():
+    try:
+        with conectar() as conexion:
+            with conexion.cursor(row_factory=dict_row) as cursor:
+                cursor.execute("""
+                    SELECT id, usuario, rol, activo, creado_en, es_propietario,
+                           permiso_productos, permiso_ventas, permiso_pedidos,
+                           permiso_administracion, permiso_reportes, permiso_usuarios
+                    FROM usuarios ORDER BY es_propietario DESC, usuario ASC
+                """)
+                usuarios = cursor.fetchall()
+        return render_template('usuarios.html', usuarios=usuarios,
+                               permisos_disponibles=ETIQUETAS_PERMISOS)
+    except psycopg.Error:
+        app.logger.exception('Error consultando usuarios')
+        flash('No se pudieron cargar los usuarios.', 'error')
+        return redirect(url_for('administracion'))
+
+@app.post('/administracion/usuarios/nuevo')
+@solo_gestor_usuarios
+def crear_usuario_web():
+    validar_csrf()
+    nombre = request.form.get('usuario','').strip()
+    clave = request.form.get('clave','')
+    rol = request.form.get('rol','vendedor')
+    try:
+        if not 3 <= len(nombre) <= 80 or not all(
+                c.isalnum() or c in '_.-' for c in nombre):
+            raise ValueError('El usuario debe tener entre 3 y 80 letras, números, punto, guion o _.')
+        if not 12 <= len(clave) <= 128:
+            raise ValueError('La contraseña debe tener entre 12 y 128 caracteres.')
+        permisos = permisos_desde_formulario(rol)
+        if not any(permisos.values()):
+            raise ValueError('Selecciona al menos un apartado o desactiva posteriormente la cuenta.')
+        with conectar() as conexion:
+            with conexion.cursor(row_factory=dict_row) as cursor:
+                cursor.execute('SELECT id FROM usuarios WHERE lower(usuario)=lower(%s) LIMIT 1', (nombre,))
+                if cursor.fetchone():
+                    raise ValueError('Ya existe un usuario con ese nombre.')
+                cursor.execute("""
+                    INSERT INTO usuarios(
+                       usuario,clave_hash,rol,activo,permiso_productos,
+                       permiso_ventas,permiso_pedidos,permiso_administracion,
+                       permiso_reportes,permiso_usuarios,es_propietario)
+                    VALUES (%s,%s,%s,TRUE,%s,%s,%s,%s,%s,%s,FALSE)
+                """, (nombre,generate_password_hash(clave),rol,
+                      *(permisos[p] for p in PERMISOS)))
+        flash('Usuario creado con los accesos seleccionados.', 'success')
+    except ValueError as exc:
+        flash(str(exc), 'error')
+    except psycopg.Error:
+        app.logger.exception('Error creando usuario')
+        flash('No fue posible crear el usuario. Revisa el nombre y vuelve a intentar.', 'error')
+    return redirect(url_for('usuarios_admin'))
+
+@app.post('/administracion/usuarios/<int:uid>/permisos')
+@solo_gestor_usuarios
+def actualizar_usuario_web(uid):
+    validar_csrf()
+    if uid == g.usuario['id']:
+        abort(403)
+    rol = request.form.get('rol','')
+    try:
+        permisos = permisos_desde_formulario(rol)
+        with conectar() as conexion:
+            with conexion.cursor(row_factory=dict_row) as cursor:
+                cursor.execute('SELECT id,es_propietario FROM usuarios WHERE id=%s FOR UPDATE',(uid,))
+                objetivo=cursor.fetchone()
+                if not objetivo:
+                    abort(404)
+                if objetivo['es_propietario']:
+                    abort(403)
+                cursor.execute("""
+                    UPDATE usuarios SET rol=%s,permiso_productos=%s,
+                        permiso_ventas=%s,permiso_pedidos=%s,
+                        permiso_administracion=%s,permiso_reportes=%s,
+                        permiso_usuarios=%s WHERE id=%s
+                """,(rol,*(permisos[p] for p in PERMISOS),uid))
+        flash('Accesos del usuario actualizados.', 'success')
+    except ValueError as exc:
+        flash(str(exc), 'error')
+    except psycopg.Error:
+        app.logger.exception('Error actualizando permisos')
+        flash('No se pudieron guardar los cambios.', 'error')
+    return redirect(url_for('usuarios_admin'))
+
+@app.post('/administracion/usuarios/<int:uid>/estado')
+@solo_gestor_usuarios
+def activar_usuario_web(uid):
+    validar_csrf()
+    if uid == g.usuario['id']:
+        abort(403)
+    habilitar = request.form.get('activo') == 'true'
+    try:
+        with conectar() as conexion:
+            with conexion.cursor(row_factory=dict_row) as cursor:
+                cursor.execute('SELECT id,es_propietario FROM usuarios WHERE id=%s FOR UPDATE',(uid,))
+                objetivo=cursor.fetchone()
+                if not objetivo:
+                    abort(404)
+                if objetivo['es_propietario']:
+                    abort(403)
+                cursor.execute('UPDATE usuarios SET activo=%s WHERE id=%s',(habilitar,uid))
+        flash('Cuenta activada.' if habilitar else 'Cuenta desactivada. Su sesión dejará de tener acceso.', 'success')
+    except psycopg.Error:
+        app.logger.exception('Error al cambiar estado del usuario')
+        flash('No se pudo cambiar el estado de la cuenta.', 'error')
+    return redirect(url_for('usuarios_admin'))
+
+@app.post('/administracion/usuarios/<int:uid>/contrasena')
+@solo_gestor_usuarios
+def clave_usuario_web(uid):
+    validar_csrf()
+    if uid == g.usuario['id']:
+        abort(403)
+    clave = request.form.get('clave','')
+    if not 12 <= len(clave) <= 128:
+        flash('La contraseña debe tener entre 12 y 128 caracteres.', 'error')
+        return redirect(url_for('usuarios_admin'))
+    try:
+        with conectar() as conexion:
+            with conexion.cursor(row_factory=dict_row) as cursor:
+                cursor.execute('SELECT id,es_propietario FROM usuarios WHERE id=%s FOR UPDATE',(uid,))
+                objetivo=cursor.fetchone()
+                if not objetivo:
+                    abort(404)
+                if objetivo['es_propietario']:
+                    abort(403)
+                cursor.execute('UPDATE usuarios SET clave_hash=%s WHERE id=%s',
+                               (generate_password_hash(clave),uid))
+        flash('Contraseña actualizada.', 'success')
+    except psycopg.Error:
+        app.logger.exception('Error actualizando contraseña')
+        flash('No se pudo cambiar la contraseña.', 'error')
+    return redirect(url_for('usuarios_admin'))
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)

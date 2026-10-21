@@ -8,9 +8,17 @@
 .inventario-indicador summary{font-weight:700;cursor:pointer;font-size:13px}
 .inventario-indicador ul{padding-left:20px;margin-bottom:0;font-size:13px}
 @media(max-width:550px){.inventario-indicadores{grid-template-columns:1fr}.inventario-indicador{padding:15px}}
+.panel-usuarios-admin .boton-usuarios{background:#77401d;color:white!important;padding:11px 15px;border-radius:10px;font-weight:750;white-space:nowrap}
+.panel-usuarios-admin .boton-usuarios:hover{text-decoration:none;background:#995523}
 </style>
 <link rel="stylesheet" href="{{ url_for('static', filename='pa-picar-marca.css') }}">
-</head><body>{% include '_navegacion.html' %}<main class="contenido principal"><h1>Administración de Pa Picar</h1><p>Actualiza precios y registra producción diaria, por lotes o ajustes de inventario.</p>{% with mensajes=get_flashed_messages(with_categories=true) %}{% for categoria,mensaje in mensajes %}<div class="alerta {{ categoria }}">{{ mensaje }}</div>{% endfor %}{% endwith %}
+</head><body>{% include '_navegacion.html' %}<main class="contenido principal"><h1>Administración de Pa Picar</h1><p>Actualiza precios y registra producción diaria, por lotes o ajustes de inventario.</p>{% if puede_gestionar_usuarios %}
+<section class="panel panel-usuarios-admin" style="margin:16px 0;padding:17px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+  <div><h2 style="margin:0 0 5px">Usuarios y accesos</h2>
+    <p style="margin:0">Crea usuarios, limita apartados y activa o bloquea sus cuentas.</p></div>
+  <a href="{{ url_for('usuarios_admin') }}" class="boton-usuarios">Gestionar usuarios →</a>
+</section>
+{% endif %}{% with mensajes=get_flashed_messages(with_categories=true) %}{% for categoria,mensaje in mensajes %}<div class="alerta {{ categoria }}">{{ mensaje }}</div>{% endfor %}{% endwith %}
 
 <section class="inventario-indicadores" aria-label="Resumen del inventario">
   <article class="inventario-indicador">

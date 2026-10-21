@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Usuarios y accesos · Pa Picar</title>
+<link rel="stylesheet" href="{{ url_for('static',filename='estilos.css') }}">
+<link rel="stylesheet" href="{{ url_for('static',filename='pa-picar-marca.css') }}">
+<style>
+ .usuarios-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:19px}
+ .usuarios-head p{margin:6px 0;color:#86644d}
+ .usuarios-grid{display:grid;grid-template-columns:minmax(260px,1fr) minmax(0,1.2fr);gap:18px;align-items:start}
+ .usuarios-panel{background:#fffaf4;border:1px solid #e6d2bf;border-radius:16px;padding:19px;min-width:0}
+ .usuarios-panel h2{font-size:19px;margin:0 0 6px}
+ .usuarios-panel p{font-size:13px;color:#805c45}
+ .usuarios-panel form{display:grid;gap:8px}
+ .usuarios-panel label{display:block;font-size:13px;font-weight:700;margin:7px 0 2px}
+ .usuarios-panel input,.usuarios-panel select{width:100%;min-height:42px}
+ .usuarios-panel button{width:100%;margin:7px 0 0}
+ .permisos-fieldset{border:1px solid #e6d2bf;border-radius:12px;padding:12px;display:grid;gap:8px;margin:8px 0}
+ .permisos-fieldset legend{font-weight:800;font-size:13px;padding:0 4px}
+ .permiso-check{display:flex!important;gap:9px;align-items:center;margin:0!important;line-height:1.3}
+ .permiso-check input{width:18px!important;height:18px;min-height:0;flex-shrink:0;margin:0}
+ .usuarios-existente{margin:12px 0;border:1px solid #e6d2bf;border-radius:13px;padding:13px;background:white}
+ .usuarios-existente summary{cursor:pointer;font-weight:750;font-size:14px}
+ .usuarios-existente summary small{font-weight:450;color:#80614c}
+ .usuarios-existente .info{font-size:12px;color:#805c45;margin:8px 0}
+ .usuarios-existente .aviso{background:#f7e7d4;border-radius:10px;padding:10px;font-size:12px}
+ .acciones-usuario{display:grid;grid-template-columns:1fr;gap:13px;margin-top:13px}
+ .acciones-usuario form{border-top:1px solid #ead8c8;padding-top:10px}
+ .danger{background:#9b4336!important}
+ .volver{font-weight:700}
+ .nota{font-size:12px!important;margin-top:12px}
+ .status-on{color:#316d3b}
+ .status-off{color:#9b4336}
+ @media(max-width:850px){.usuarios-grid{grid-template-columns:1fr}.usuarios-panel{padding:14px}}
+</style>
+</head>
+<body>
+{% include '_navegacion.html' %}
+<main class="contenido principal">
+  <header class="usuarios-head">
+    <div>
+      <p class="sobretitulo">ADMINISTRACIÓN · SEGURIDAD</p>
+      <h1>Usuarios y accesos</h1>
+      <p>Crea cuentas para tu personal y define a qué apartados puede entrar cada usuario.</p>
+    </div>
+    <a class="volver" href="{{ url_for('administracion') }}">← Volver a Administración</a>
+  </header>
+  {% with mensajes=get_flashed_messages(with_categories=true) %}
+    {% for categoria,mensaje in mensajes %}<div class="alerta {{ categoria }}" role="alert">{{ mensaje }}</div>{% endfor %}
+  {% endwith %}
+  <div class="usuarios-grid">
+    <section class="usuarios-panel">
+      <h2>Crear usuario</h2>
+      <p>Marca solo las secciones que podrá utilizar. Los permisos se aplican desde el primer inicio de sesión.</p>
+      <form method="post" action="{{ url_for('crear_usuario_web') }}">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        <label for="nuevo-usuario">Nombre de usuario</label>
+        <input id="nuevo-usuario" name="usuario" autocomplete="off" minlength="3" maxlength="80" pattern="[\w.\-]{3,80}" required placeholder="Ej.: empleado_01">
+        <label for="nueva-clave">Contraseña inicial</label>
+        <input id="nueva-clave" name="clave" type="password" autocomplete="new-password" minlength="12" maxlength="128" required placeholder="Mínimo 12 caracteres">
+        <label for="nuevo-rol">Tipo de cuenta</label>
+        <select id="nuevo-rol" name="rol" class="selector-rol">
+          <option value="vendedor" selected>Personal / vendedor</option>
+          <option value="administrador">Administrador con permisos seleccionados</option>
+        </select>
+        <fieldset class="permisos-fieldset">
+          <legend>Apartados permitidos</legend>
+          {% for clave,etiqueta in permisos_disponibles %}
+            <label class="permiso-check">
+              <input type="checkbox" name="permiso_{{ clave }}" {% if clave in ('productos','ventas') %}checked{% endif %}
+                {% if clave in ('administracion','usuarios') %}data-admin-only="1"{% endif %}
+                {% if clave == 'usuarios' and not usuario_actual.es_propietario %}disabled{% endif %}>
+              {{ etiqueta }}
+            </label>
+          {% endfor %}
+        </fieldset>
+        <p class="nota">La gestión de usuarios solo puede delegarse por el propietario y requiere permiso de Administración.</p>
+        <button type="submit">Crear usuario</button>
+      </form>
+    </section>
+    <section class="usuarios-panel">
+      <h2>Usuarios registrados</h2>
+      <p>Puedes editar accesos, bloquear cuentas y cambiar contraseñas sin afectar a los demás empleados.</p>
+      {% for u in usuarios %}
+        <details class="usuarios-existente">
+          <summary>{{ u.usuario }}
+            <small>· {{ 'Administrador' if u.rol=='administrador' else 'Personal' }}
+            · <span class="{{ 'status-on' if u.activo else 'status-off' }}">{{ 'Activo' if u.activo else 'Bloqueado' }}</span>
+            {% if u.es_propietario %}· Cuenta principal{% endif %}</small>
+          </summary>
+          {% if u.es_propietario %}
+            <p class="aviso">Cuenta principal protegida. Sus accesos y su estado no pueden modificarse desde este apartado.</p>
+          {% elif u.id == usuario_actual.id %}
+            <p class="aviso">Por seguridad, tu propia cuenta no puede bloquearse ni modificar sus permisos desde aquí.</p>
+          {% else %}
+            <div class="acciones-usuario">
+              <form method="post" action="{{ url_for('actualizar_usuario_web',uid=u.id) }}">
+                <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+                <label for="rol-{{ u.id }}">Tipo de cuenta</label>
+                <select id="rol-{{ u.id }}" name="rol" class="selector-rol">
+                  <option value="vendedor" {{ 'selected' if u.rol=='vendedor' else '' }}>Personal / vendedor</option>
+                  <option value="administrador" {{ 'selected' if u.rol=='administrador' else '' }}>Administrador con permisos</option>
+                </select>
+                <fieldset class="permisos-fieldset">
+                  <legend>Permisos de este usuario</legend>
+                  {% for clave,etiqueta in permisos_disponibles %}
+                    <label class="permiso-check">
+                      <input type="checkbox" name="permiso_{{ clave }}"
+                        {% if u['permiso_' ~ clave] %}checked{% endif %}
+                        {% if clave in ('administracion','usuarios') %}data-admin-only="1"{% endif %}
+                        {% if clave == 'usuarios' and not usuario_actual.es_propietario %}disabled{% endif %}>
+                      {{ etiqueta }}
+                    </label>
+                  {% endfor %}
+                </fieldset>
+                <button type="submit">Guardar permisos</button>
+              </form>
+              <form method="post" action="{{ url_for('clave_usuario_web',uid=u.id) }}">
+                <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+                <label for="clave-{{ u.id }}">Cambiar contraseña</label>
+                <input id="clave-{{ u.id }}" type="password" name="clave" minlength="12" maxlength="128"
+                       autocomplete="new-password" required placeholder="Nueva contraseña (12 caracteres o más)">
+                <button type="submit">Actualizar contraseña</button>
+              </form>
+              <form method="post" action="{{ url_for('activar_usuario_web',uid=u.id) }}"
+                    onsubmit="return confirm('¿Seguro que deseas cambiar el estado de esta cuenta?')">
+                <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+                <input type="hidden" name="activo" value="{{ 'false' if u.activo else 'true' }}">
+                <button type="submit" class="{{ 'danger' if u.activo else '' }}">
+                  {{ 'Bloquear usuario' if u.activo else 'Activar usuario' }}
+                </button>
+              </form>
+            </div>
+          {% endif %}
+        </details>
+      {% else %}
+        <p>Solo existe la cuenta principal por ahora.</p>
+      {% endfor %}
+    </section>
+  </div>
+</main>
+<form class="salir-flotante no-print" method="post" action="{{ url_for('logout') }}">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <button type="submit" aria-label="Cerrar sesión">Salir</button>
+</form>
+<script>
+  function actualizarRol(select) {
+    const form = select.closest('form');
+    const admin = select.value === 'administrador';
+    for (const checkbox of form.querySelectorAll('[data-admin-only]')) {
+      checkbox.disabled = !admin || (checkbox.name === 'permiso_usuarios' && checkbox.hasAttribute('data-solo-propietario'));
+      if (!admin) checkbox.checked = false;
+    }
+  }
+  for (const selector of document.querySelectorAll('.selector-rol')) {
+    const form=selector.closest('form');
+    for (const c of form.querySelectorAll('input[name=permiso_usuarios]')) {
+      if (c.disabled) c.setAttribute('data-solo-propietario','1');
+    }
+    selector.addEventListener('change',()=>actualizarRol(selector));
+    actualizarRol(selector);
+  }
+</script>
+</body></html>
