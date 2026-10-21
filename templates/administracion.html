@@ -12,6 +12,7 @@
 .panel-usuarios-admin .boton-usuarios:hover{text-decoration:none;background:#995523}
 </style>
 <link rel="stylesheet" href="{{ url_for('static', filename='pa-picar-marca.css') }}">
+{% include '_pwa_head.html' %}
 </head><body>{% include '_navegacion.html' %}<main class="contenido principal"><h1>Administración de Pa Picar</h1><p>Actualiza precios y registra producción diaria, por lotes o ajustes de inventario.</p>{% if puede_gestionar_usuarios %}
 <section class="panel panel-usuarios-admin" style="margin:16px 0;padding:17px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
   <div><h2 style="margin:0 0 5px">Usuarios y accesos</h2>

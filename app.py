@@ -3,7 +3,8 @@ import logging
 import os
 import secrets
 import json
-from functools import wraps
+from io import BytesIO
+from functools import wraps, lru_cache
 from datetime import timedelta
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
@@ -11,7 +12,7 @@ from decimal import Decimal, InvalidOperation
 import psycopg
 from psycopg.rows import dict_row
 from dotenv import load_dotenv
-from flask import Flask, flash, redirect, render_template, request, url_for, session, abort, g
+from flask import Flask, flash, redirect, render_template, request, url_for, session, abort, g, send_file, send_from_directory
 from werkzeug.security import check_password_hash, generate_password_hash
 
 load_dotenv()
@@ -101,7 +102,7 @@ def exigir_acceso():
     endpoint = request.endpoint
     if endpoint == 'static':
         return
-    if endpoint in ('login', 'logout', 'pedidos_publicos', 'enviar_pedido', 'pedido_recibido'):
+    if endpoint in ('login', 'logout', 'pedidos_publicos', 'enviar_pedido', 'pedido_recibido', 'pwa_icon', 'pwa_service_worker'):
         return
     if endpoint is None:
         abort(404)
@@ -161,6 +162,47 @@ def usuario_actual():
         'usuario_actual': usuario,
         'puede_gestionar_usuarios': puede_gestionar_usuarios(usuario),
     }
+
+# PWA para iPhone. Los iconos cuadrados se generan a partir del
+# archivo original de la marca (no se modifica el logo existente).
+# Las rutas son públicas y no consultan usuarios, sesiones ni pedidos.
+@lru_cache(maxsize=3)
+def _icono_pwa_png(tamano):
+    from PIL import Image, ImageOps
+    ruta = os.path.join(app.static_folder, 'logo-pa-picar.png')
+    with Image.open(ruta) as original:
+        marca = original.convert('RGB')
+    fondo = Image.new('RGB', (tamano, tamano), '#f7eee5')
+    dibujo = ImageOps.contain(
+        marca,
+        (int(tamano * 0.94), int(tamano * 0.82)),
+        Image.Resampling.LANCZOS
+    )
+    fondo.paste(dibujo, ((tamano-dibujo.width)//2, (tamano-dibujo.height)//2))
+    salida = BytesIO()
+    fondo.save(salida, format='PNG', optimize=True)
+    return salida.getvalue()
+
+
+@app.get('/app-icon/<int:size>.png')
+def pwa_icon(size):
+    if size not in (180, 192, 512):
+        abort(404)
+    archivo = BytesIO(_icono_pwa_png(size))
+    return send_file(
+        archivo, mimetype='image/png', max_age=604800,
+        download_name=f'pa-picar-{size}.png'
+    )
+
+
+@app.get('/sw.js')
+def pwa_service_worker():
+    respuesta = send_from_directory(
+        app.static_folder, 'pwa/sw.js', mimetype='application/javascript'
+    )
+    # Permite que el iPhone y otros navegadores busquen actualizaciones.
+    respuesta.headers['Cache-Control'] = 'no-cache, max-age=0'
+    return respuesta
 
 @app.get('/panel')
 def panel():
