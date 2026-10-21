@@ -16,3 +16,9 @@ button,.boton,input[type=submit]{background:var(--marron)!important;color:white!
 .nav-principal .nav-logo img{width:105px;height:57px;object-fit:contain}
 .nav-principal a.activo{background:#77401d!important;color:#fffaf4!important;border-color:#77401d!important}
 @media(max-width:650px){.nav-principal{width:calc(100% - 22px);gap:7px}.nav-principal .nav-logo{flex:1 1 100%;text-align:center;margin:0!important}.nav-principal .nav-logo img{width:93px;height:48px}.nav-principal a:not(.nav-logo){flex:1 1 calc(50% - 7px);text-align:center;padding:9px 7px;font-size:13px}}
+
+/* Botón de salida coherente en las nuevas pantallas */
+.salir-flotante{position:fixed;right:14px;bottom:14px;z-index:99;margin:0}
+.salir-flotante button{width:auto!important;min-width:72px;padding:9px 17px!important;border-radius:999px!important;background:#77401d!important;color:#fffaf4!important;border:1px solid #e6d2bf!important;box-shadow:0 5px 18px #4d2b1933;font-size:13px;line-height:1.2;font-weight:650;cursor:pointer;margin:0!important}
+@media(max-width:720px){.salir-flotante{right:12px;bottom:12px}}
+@media print{.salir-flotante{display:none!important}}
