@@ -1,6 +1,35 @@
-<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pa Picar · Administración</title><link rel="stylesheet" href="{{ url_for('static',filename='estilos.css') }}"><style>.admin-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}.admin-card{background:white;border:1px solid #ddd;border-radius:16px;padding:20px}.admin-card form{display:grid;gap:8px;margin-top:12px}.admin-card input,.admin-card select,.admin-card button{padding:10px;max-width:100%;box-sizing:border-box}.admin-card button{background:#214b32;color:white;border:0;border-radius:8px;cursor:pointer}.admin-card h3{margin:0}.movimientos{overflow-x:auto}.movimientos table{width:100%;border-collapse:collapse}.movimientos td,.movimientos th{padding:9px;border-bottom:1px solid #ddd;text-align:left}</style>
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pa Picar · Administración</title><link rel="stylesheet" href="{{ url_for('static',filename='estilos.css') }}"><style>.admin-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}.admin-card{background:white;border:1px solid #ddd;border-radius:16px;padding:20px}.admin-card form{display:grid;gap:8px;margin-top:12px}.admin-card input,.admin-card select,.admin-card button{padding:10px;max-width:100%;box-sizing:border-box}.admin-card button{background:#214b32;color:white;border:0;border-radius:8px;cursor:pointer}.admin-card h3{margin:0}.movimientos{overflow-x:auto}.movimientos table{width:100%;border-collapse:collapse}.movimientos td,.movimientos th{padding:9px;border-bottom:1px solid #ddd;text-align:left}
+.inventario-indicadores{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:20px 0 24px}
+.inventario-indicador{display:flex;flex-direction:column;min-width:0;background:#fffaf4;border:1px solid #e6d2bf;border-radius:16px;padding:20px;box-shadow:0 5px 16px #77401d0a}
+.inventario-indicador span{font-size:13px;color:#85634e}
+.inventario-indicador strong{font-size:32px;margin:10px 0;font-weight:800;color:#4d2b19}
+.inventario-indicador small{font-size:12px;color:#85634e}
+.inventario-indicador details{margin-top:13px}
+.inventario-indicador summary{font-weight:700;cursor:pointer;font-size:13px}
+.inventario-indicador ul{padding-left:20px;margin-bottom:0;font-size:13px}
+@media(max-width:550px){.inventario-indicadores{grid-template-columns:1fr}.inventario-indicador{padding:15px}}
+</style>
 <link rel="stylesheet" href="{{ url_for('static', filename='pa-picar-marca.css') }}">
 </head><body>{% include '_navegacion.html' %}<main class="contenido principal"><h1>Administración de Pa Picar</h1><p>Actualiza precios y registra producción diaria, por lotes o ajustes de inventario.</p>{% with mensajes=get_flashed_messages(with_categories=true) %}{% for categoria,mensaje in mensajes %}<div class="alerta {{ categoria }}">{{ mensaje }}</div>{% endfor %}{% endwith %}
+
+<section class="inventario-indicadores" aria-label="Resumen del inventario">
+  <article class="inventario-indicador">
+    <span>Unidades disponibles</span>
+    <strong>{{ total_unidades }}</strong>
+    <small>{{ cantidad_productos_activos }} tipos de productos activos</small>
+  </article>
+  <article class="inventario-indicador">
+    <span>Inventario bajo</span>
+    <strong>{{ inventario_bajo|length }}</strong>
+    <small>Productos activos con 10 unidades o menos</small>
+    {% if inventario_bajo %}
+      <details>
+        <summary>Ver productos con inventario bajo</summary>
+        <ul>{% for p in inventario_bajo %}<li>{{ p.nombre }}: {{ p.cantidad or 0 }} unidades</li>{% endfor %}</ul>
+      </details>
+    {% endif %}
+  </article>
+</section>
 
 <div class="admin-grid">{% for p in productos %}<section class="admin-card"><h3>{{ p.nombre }} <small>#{{ p.id }}</small> {% if not p.activo %}<small style="color:#b43d28">(Inactivo)</small>{% endif %}</h3><p>Existencias: <strong>{{ p.cantidad }}</strong></p><form method="post" action="{{ url_for('editar_producto',pid=p.id) }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><label>Nombre <input name="nombre" value="{{ p.nombre }}" maxlength="100" required></label><label>Precio (RD$) <input name="precio" type="number" min="0" max="99999999.99" step="0.01" value="{{ p.precio }}" required></label><button>Guardar nombre y precio</button></form><form method="post" action="{{ url_for('movimiento_producto',pid=p.id) }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><label>Tipo de movimiento <select name="tipo"><option value="Diaria">Producción diaria (+)</option><option value="Lote">Producción por lote (+)</option><option value="Ajuste entrada">Ajuste de entrada (+)</option><option value="Ajuste salida">Ajuste de salida (-)</option><option value="Merma">Pérdida / merma (-)</option></select></label><label>Unidades <input name="cantidad" type="number" min="1" max="1000000" required></label><label>Nota (opcional) <input name="nota" maxlength="250" placeholder="Ej.: Producción del turno mañana"></label><button>Registrar movimiento</button></form><form method="post" action="{{ url_for('cambiar_estado_producto',pid=p.id) }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="activo" value="{{ 'true' if not p.activo else 'false' }}"><button type="submit" style="background:{{ '#214b32' if not p.activo else '#9b4336' }}" onclick="return confirm('¿Cambiar disponibilidad de este producto?')">{{ 'Reactivar producto' if not p.activo else 'Desactivar producto' }}</button></form></section>{% endfor %}</div><h2>Últimos movimientos</h2><div class="admin-card movimientos"><table><thead><tr><th>Fecha</th><th>Producto</th><th>Tipo</th><th>Cantidad</th><th>Nota</th></tr></thead><tbody>{% for m in movimientos %}<tr><td>{{ m.fecha.strftime('%d/%m/%Y %H:%M') }}</td><td>{{ m.nombre }}</td><td>{{ m.tipo }}</td><td>{{ '%+d'|format(m.cantidad) }}</td><td>{{ m.nota }}</td></tr>{% else %}<tr><td colspan="5">Todavía no hay movimientos.</td></tr>{% endfor %}</tbody></table></div></main><form class="salir-flotante no-print" method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button type="submit" aria-label="Cerrar sesión">Salir</button></form><style>
 .salir-flotante{position:fixed;right:14px;bottom:14px;z-index:99;margin:0}

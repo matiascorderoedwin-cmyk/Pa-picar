@@ -17,6 +17,13 @@
   .periodos{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}
   .periodos a{padding:8px 13px;border:1px solid #e6d2bf;border-radius:10px;background:#fffaf4;font-weight:700}
   .periodos .seleccionado{background:#77401d;color:#fff!important}
+  .desglose-pagos{margin-bottom:23px;padding:18px!important}
+  .desglose-pagos h2{font-size:18px;margin:0}
+  .desglose-encabezado{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:9px}
+  .desglose-ayuda{font-size:12px;color:#85634e;margin:5px 0 0}
+  .desglose-reportes{font-size:13px;font-weight:700}
+  .desglose-fila{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 0;border-top:1px solid #e6d2bf}
+  .desglose-fila strong{font-size:17px;white-space:nowrap}
   .historial{overflow-x:auto}
   .historial table{min-width:650px;width:100%}
   .historial form{display:grid;gap:7px;max-width:240px}
@@ -35,6 +42,25 @@
     <section class="resumen-caja"><span>Ventas de esta semana</span><strong>RD$ {{ '{:,.2f}'.format(resumen.semana) }}</strong><small>{{ resumen.facturas_semana }} facturas activas</small></section>
     <section class="resumen-caja"><span>Ventas de este mes</span><strong>RD$ {{ '{:,.2f}'.format(resumen.mes) }}</strong><small>{{ resumen.facturas_mes }} facturas activas</small></section>
   </div>
+  <section class="panel desglose-pagos" aria-labelledby="pagos-hoy">
+    <div class="desglose-encabezado">
+      <div>
+        <h2 id="pagos-hoy">Ingresos de hoy por método de pago</h2>
+        <p class="desglose-ayuda">Solo ventas activas registradas hoy, hora de República Dominicana.</p>
+      </div>
+      {% if usuario_actual.rol == 'administrador' %}
+        <a class="desglose-reportes" href="{{ url_for('reportes') }}">Ver reportes →</a>
+      {% endif %}
+    </div>
+    <div class="desglose-fila">
+      <span>Efectivo</span>
+      <strong>RD$ {{ '{:,.2f}'.format(resumen.efectivo_hoy) }}</strong>
+    </div>
+    <div class="desglose-fila">
+      <span>Transferencia</span>
+      <strong>RD$ {{ '{:,.2f}'.format(resumen.transferencia_hoy) }}</strong>
+    </div>
+  </section>
   <h2>Historial de facturas</h2>
   <nav class="periodos" aria-label="Filtrar historial">
     {% for clave,etiqueta in [('todas','Todas'),('hoy','Hoy'),('semana','Semana'),('mes','Mes')] %}

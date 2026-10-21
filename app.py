@@ -324,7 +324,13 @@ def listado_ventas():
                         COALESCE(SUM(total) FILTER (WHERE (fecha AT TIME ZONE 'America/Santo_Domingo') >=
                             date_trunc('month', CURRENT_TIMESTAMP AT TIME ZONE 'America/Santo_Domingo')), 0) AS mes,
                         COUNT(*) FILTER (WHERE (fecha AT TIME ZONE 'America/Santo_Domingo') >=
-                            date_trunc('month', CURRENT_TIMESTAMP AT TIME ZONE 'America/Santo_Domingo')) AS facturas_mes
+                            date_trunc('month', CURRENT_TIMESTAMP AT TIME ZONE 'America/Santo_Domingo')) AS facturas_mes,
+                        COALESCE(SUM(total) FILTER (WHERE metodo_pago='Efectivo'
+                            AND (fecha AT TIME ZONE 'America/Santo_Domingo')::date =
+                                (CURRENT_TIMESTAMP AT TIME ZONE 'America/Santo_Domingo')::date), 0) AS efectivo_hoy,
+                        COALESCE(SUM(total) FILTER (WHERE metodo_pago='Transferencia'
+                            AND (fecha AT TIME ZONE 'America/Santo_Domingo')::date =
+                                (CURRENT_TIMESTAMP AT TIME ZONE 'America/Santo_Domingo')::date), 0) AS transferencia_hoy
                     FROM ventas WHERE estado = 'Activa'
                 """)
                 resumen = cursor.fetchone()
@@ -395,7 +401,19 @@ def administracion():
                                   FROM movimientos_inventario m JOIN productos p ON p.id=m.producto_id
                                   ORDER BY m.id DESC LIMIT 50''')
                 movimientos = cursor.fetchall()
-        return render_template('administracion.html',productos=productos,movimientos=movimientos)
+        # Indicadores de inventario solo sobre los productos activos, como
+        # el resumen anterior del panel principal.
+        productos_activos = [p for p in productos if p['activo']]
+        total_unidades = sum((p['cantidad'] or 0) for p in productos_activos)
+        inventario_bajo = [p for p in productos_activos if (p['cantidad'] or 0) <= 10]
+        return render_template(
+            'administracion.html',
+            productos=productos,
+            movimientos=movimientos,
+            total_unidades=total_unidades,
+            cantidad_productos_activos=len(productos_activos),
+            inventario_bajo=inventario_bajo,
+        )
     except psycopg.Error:
         app.logger.exception('Error en administración')
         flash('No se pudo abrir administración. Comprueba la conexión y las tablas de inventario.', 'error')
