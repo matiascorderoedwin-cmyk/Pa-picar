@@ -2,147 +2,88 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#77401d">
-  <title>Pa Picar · Panel principal</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='estilos.css') }}">
-
-<link rel="stylesheet" href="{{ url_for('static', filename='pa-picar-marca.css') }}">
+  <title>Productos y catálogo · Pa Picar</title>
+  <link rel="stylesheet" href="{{ url_for('static',filename='estilos.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static',filename='pa-picar-marca.css') }}">
+  <style>
+    .home-intro{margin:12px 0 23px}
+    .home-intro p{color:#815e47;margin:7px 0}
+    .home-columnas{display:grid;grid-template-columns:minmax(260px,.85fr) minmax(0,1.4fr);gap:18px;align-items:start}
+    .home-columnas .panel{min-width:0}
+    .tabla-scroll{max-width:100%}
+    .etiqueta{border-radius:7px;padding:5px 8px;font-size:12px;font-weight:700;white-space:nowrap}
+    .etiqueta.activo{background:#e6f2df;color:#2c5c35}
+    .etiqueta.inactivo{background:#f3e7dc;color:#865036}
+    @media(max-width:820px){.home-columnas{grid-template-columns:1fr}}
+  </style>
 </head>
 <body>
-  <header class="cabecera">
-    <div class="contenido cabecera-interior">
-      <a class="marca" href="{{ url_for('inicio') }}" aria-label="Pa Picar, inicio">
-        <img src="{{ url_for('static', filename='logo-pa-picar.png') }}" alt="Logo original Pa Picar">
-        <span><strong>Pa Picar</strong><small>Gestión de negocio</small></span>
-      </a>
-      <span class="entorno">PA PICAR · ETAPA 5</span>
-    </div>
-  </header>
-
+  {% include '_navegacion.html' %}
   <main class="contenido principal">
-    <nav class="acciones"><a href="{{ url_for('facturar') }}">Nueva factura</a> · <a href="{{ url_for('listado_ventas') }}">Historial de ventas</a> · <a href="{{ url_for('administracion') }}">Administración</a> · <a href="{{ url_for('reportes') }}">Reportes</a></nav>
-    <div class="introduccion">
-      <div>
-        <p class="sobretitulo">SISTEMA DE FACTURACIÓN</p>
-        <h1>Panel principal</h1>
-        <p>Consulta las ventas y el inventario de tu negocio en un solo lugar.</p>
-      </div>
-      <span class="estado {{ 'conectado' if base_disponible else 'sin-conexion' }}">
-        <span class="punto"></span>
-        {{ 'PostgreSQL conectado' if base_disponible else 'Revisar PostgreSQL' }}
-      </span>
+    <div class="home-intro">
+      <p class="sobretitulo">PA PICAR · PANEL PRINCIPAL</p>
+      <h1>Productos y catálogo</h1>
+      <p>Registra nuevos productos y consulta los productos registrados.</p>
     </div>
-
-    {% with mensajes = get_flashed_messages(with_categories=true) %}
-      {% for categoria, mensaje in mensajes %}
+    {% with mensajes=get_flashed_messages(with_categories=true) %}
+      {% for categoria,mensaje in mensajes %}
         <div class="alerta {{ categoria }}" role="alert">{{ mensaje }}</div>
       {% endfor %}
     {% endwith %}
+    {% if not base_disponible %}<p class="alerta error">La base de datos no está disponible.</p>{% endif %}
 
-    <section class="estadisticas panel-resumen" aria-label="Resumen del negocio">
-      <article class="estadistica destacado"><span>Ingresos de hoy</span><strong>RD$ {{ '{:,.2f}'.format(total_ventas) }}</strong><small>Solo facturas activas</small></article>
-      <article class="estadistica"><span>Facturas de hoy</span><strong>{{ facturas_hoy }}</strong><small>Ventas completadas</small></article>
-      <article class="estadistica"><span>Unidades disponibles</span><strong>{{ total_unidades }}</strong><small>{{ cantidad_productos }} tipos de productos activos</small></article>
-      <article class="estadistica"><span>Inventario bajo</span><strong>{{ inventario_bajo|length }}</strong><small>Productos con 10 unidades o menos</small></article>
-    </section>
-    <div class="panel-paneles">
-      <section class="panel" aria-labelledby="pagos-titulo">
-        <h2 id="pagos-titulo">Ingresos de hoy por método de pago</h2>
-        <div class="pago-fila"><span>Efectivo</span><strong>RD$ {{ '{:,.2f}'.format(ventas_efectivo) }}</strong></div>
-        <div class="pago-fila"><span>Transferencia</span><strong>RD$ {{ '{:,.2f}'.format(ventas_transferencia) }}</strong></div>
-        <a class="enlace-panel" href="{{ url_for('reportes') }}">Ver reportes →</a>
-      </section>
-      <section class="panel" aria-labelledby="alertas-titulo">
-        <h2 id="alertas-titulo">Avisos de inventario</h2>
-        {% if inventario_bajo %}
-          <ul class="avisos-stock">
-          {% for producto in inventario_bajo %}
-            <li><span>{{ producto.nombre }}</span><strong>{{ producto.cantidad or 0 }} uds.</strong></li>
-          {% endfor %}
-          </ul>
-        {% else %}
-          <p class="estado-bien">Todos los productos activos tienen más de 10 unidades.</p>
-        {% endif %}
-        {% if usuario_actual.rol == 'administrador' %}<a class="enlace-panel" href="{{ url_for('administracion') }}">Administrar inventario →</a>{% endif %}
-      </section>
-      <section class="panel panel-ultimas" aria-labelledby="ultimas-titulo">
-        <h2 id="ultimas-titulo">Últimas ventas</h2>
-        {% if ultimas_ventas %}
-        <div class="tabla-scroll">
-          <table><thead><tr><th>Factura</th><th>Fecha (RD)</th><th>Método</th><th>Total</th></tr></thead>
-          <tbody>{% for venta in ultimas_ventas %}
-            <tr><td><a href="{{ url_for('recibo', venta_id=venta.id) }}">#{{ venta.id }}</a></td><td>{{ venta.fecha_local.strftime('%d/%m/%Y %I:%M %p') }}</td><td>{{ venta.metodo_pago }}</td><td>RD$ {{ '{:,.2f}'.format(venta.total) }}</td></tr>
-          {% endfor %}</tbody></table>
-        </div>
-        {% else %}<p>Aún no hay ventas registradas.</p>{% endif %}
-        <a class="enlace-panel" href="{{ url_for('listado_ventas') }}">Ver historial →</a>
-      </section>
-    </div>
-
-    <h2 class="seccion-productos">Productos y catálogo</h2>\n    <div class="columnas">
-      <section class="panel" aria-labelledby="nuevo-titulo">
+    <div class="home-columnas">
+      {% if usuario_actual.rol == 'administrador' %}
+      <section class="panel" aria-labelledby="nuevo-producto">
         <div class="panel-cabecera">
-          <h2 id="nuevo-titulo">Agregar producto</h2>
-          <p>Guarda el precio real y la cantidad disponible.</p>
+          <h2 id="nuevo-producto">Registrar producto</h2>
+          <p>Agrega el nombre, el precio y las unidades iniciales.</p>
         </div>
-        {% if usuario_actual.rol == "administrador" %}<form method="post" action="{{ url_for('agregar_producto') }}" class="formulario"><input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        <form method="post" action="{{ url_for('agregar_producto') }}" class="formulario">
+          <input type="hidden" name="csrf" value="{{ csrf_token() }}">
           <label for="nombre">Nombre del producto</label>
-          <input id="nombre" name="nombre" list="sugerencias" placeholder="Ej.: Quipes" maxlength="100" required>
+          <input id="nombre" name="nombre" list="sugerencias" maxlength="100" placeholder="Ej.: Quipes" required>
           <datalist id="sugerencias">
             <option value="Quipes"><option value="Chulitos"><option value="Croquetas"><option value="Pastelitos">
             <option value="Bolitas de yuca"><option value="Bolitas de queso"><option value="Sandwichitos"><option value="Tarticos">
           </datalist>
           <div class="dos-campos">
-            <div><label for="precio">Precio (RD$)</label><input id="precio" name="precio" type="number" step="0.01" min="0" max="99999999.99" placeholder="0.00" required></div>
-            <div><label for="cantidad">Cantidad</label><input id="cantidad" name="cantidad" type="number" step="1" min="0" max="100000000" placeholder="0" required></div>
+            <div><label for="precio">Precio (RD$)</label><input id="precio" name="precio" type="number" step="0.01" min="0" max="99999999.99" required></div>
+            <div><label for="cantidad">Cantidad inicial</label><input id="cantidad" name="cantidad" type="number" step="1" min="0" max="100000000" required></div>
           </div>
-          <button type="submit" {{ 'disabled' if not base_disponible }}>+ Guardar producto</button>
-          <p class="ayuda">Los datos se guardarán directamente en PostgreSQL.</p>
-        </form>{% endif %}
+          <button type="submit" {{ 'disabled' if not base_disponible }}>Guardar producto</button>
+          <p class="ayuda">Para editar precios y ajustar inventario, utiliza Administración.</p>
+        </form>
       </section>
-
-      <section class="panel" aria-labelledby="lista-titulo">
+      {% endif %}
+      <section class="panel" aria-labelledby="catalogo-registrado">
         <div class="panel-cabecera lista-cabecera">
-          <div><h2 id="lista-titulo">Productos registrados</h2><p>Catálogo conectado a la tabla <code>productos</code>.</p></div>
-          <span class="contador">{{ cantidad_productos }} registrados</span>
+          <div><h2 id="catalogo-registrado">Productos registrados</h2><p>Catálogo del negocio.</p></div>
+          <span class="contador">{{ cantidad_productos }} productos</span>
         </div>
         {% if productos %}
           <div class="tabla-scroll">
             <table>
-              <thead><tr><th>Producto</th><th>Precio</th><th>Existencias</th></tr></thead>
+              <thead><tr><th>Producto</th><th>Precio</th><th>Unidades</th><th>Estado</th></tr></thead>
               <tbody>
               {% for producto in productos %}
                 <tr>
                   <td><strong>{{ producto.nombre }}</strong><span class="codigo">#{{ producto.id }}</span></td>
                   <td class="precio">RD$ {{ '{:,.2f}'.format(producto.precio) }}</td>
-                  <td><span class="existencia {{ 'agotado' if not producto.cantidad else '' }}">{{ producto.cantidad or 0 }}</span></td>
+                  <td>{{ producto.cantidad or 0 }}</td>
+                  <td><span class="etiqueta {{ 'activo' if producto.activo else 'inactivo' }}">{{ 'Activo' if producto.activo else 'Inactivo' }}</span></td>
                 </tr>
               {% endfor %}
               </tbody>
             </table>
           </div>
         {% else %}
-          <div class="vacio">
-            <span class="vacio-icono">🥟</span>
-            <strong>Tu catálogo empieza aquí</strong>
-            <p>Registra tu primer producto en el formulario y aparecerá en esta lista.</p>
-          </div>
+          <div class="vacio"><strong>Todavía no hay productos registrados.</strong><p>Los productos nuevos aparecerán aquí.</p></div>
         {% endif %}
       </section>
     </div>
-    <footer>Pa Picar · Sistema de gestión · Los recibos internos no sustituyen comprobantes fiscales DGII.</footer>
   </main>
-<form class="salir-flotante" method="post" action="{{ url_for('logout') }}">
-    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-    <button type="submit" aria-label="Cerrar sesión">Salir</button>
-  </form>
-  <style>\n    .panel-resumen{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:20px}\n    .panel-resumen .estadistica{min-width:0}\n    .panel-resumen .estadistica strong{overflow-wrap:anywhere}\n    .panel-paneles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:20px 0 28px}\n    .panel-paneles .panel{min-width:0}\n    .panel-paneles h2{font-size:1.12rem;margin:0 0 16px}\n    .panel-ultimas{grid-column:1/-1}\n    .pago-fila,.avisos-stock li{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:11px 0;border-bottom:1px solid #e6d2bf}\n    .avisos-stock{list-style:none;margin:0;padding:0}\n    .avisos-stock li strong{white-space:nowrap}\n    .enlace-panel{display:inline-block;margin-top:16px;font-weight:700;text-decoration:underline}\n    .estado-bien{color:#416336}\n    .seccion-productos{margin:28px 0 14px}\n    @media(max-width:850px){.panel-resumen{grid-template-columns:repeat(2,minmax(0,1fr))}}\n    @media(max-width:600px){.panel-paneles{grid-template-columns:1fr}.panel-resumen{gap:10px}.panel-resumen .estadistica{padding:14px 10px}.panel-resumen .estadistica strong{font-size:clamp(1.1rem,5vw,1.65rem)}.panel-ultimas{grid-column:auto}}
-    .salir-flotante{position:fixed;right:14px;bottom:14px;z-index:99;margin:0}
-    .salir-flotante button{width:auto!important;min-width:72px;padding:9px 17px!important;border-radius:999px!important;background:#77401d!important;color:#fffaf4!important;border:1px solid #e6d2bf!important;box-shadow:0 5px 18px #4d2b1933;font-size:13px;line-height:1.2;font-weight:650;cursor:pointer}
-    .salir-flotante button:hover{background:#995523!important}
-    .salir-flotante button:focus-visible{outline:3px solid #d98a45;outline-offset:3px}
-    @media(max-width:720px){.salir-flotante{right:12px;bottom:12px}.salir-flotante button{padding:10px 16px!important}}
-    @media print{.salir-flotante{display:none}}
-  </style></body>
-</html>
+  __LOGOUT__
+</body></html>

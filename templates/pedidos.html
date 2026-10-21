@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pedidos de clientes · Pa Picar</title>
+<link rel="stylesheet" href="{{ url_for('static',filename='estilos.css') }}">
+<link rel="stylesheet" href="{{ url_for('static',filename='pa-picar-marca.css') }}">
+<style>
+  .pedidos-intro{margin-bottom:18px}
+  .pedidos-intro p{color:#85634e;max-width:760px}
+  .estados{display:flex;flex-wrap:wrap;gap:8px;margin:17px 0 22px}
+  .estados a{display:inline-flex;gap:7px;align-items:center;border:1px solid #e6d2bf;padding:9px 13px;border-radius:10px;background:#fffaf4;font-weight:750}
+  .estados a.activo{background:#77401d;color:white!important}
+  .estados small{opacity:.85;font-size:12px}
+  .listado-pedidos{display:grid;gap:13px}
+  .pedido-card{background:#fffaf4;border:1px solid #e6d2bf;border-radius:15px;padding:18px}
+  .pedido-top{display:flex;align-items:center;justify-content:space-between;gap:9px;flex-wrap:wrap}
+  .pedido-top h2{font-size:18px;margin:0}
+  .pedido-fecha{font-size:12px;color:#88654b}
+  .pedido-datos{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;margin:13px 0}
+  .pedido-datos div{min-width:0;overflow-wrap:anywhere}
+  .pedido-datos small{display:block;color:#85634e}
+  .pedido-productos{margin:10px 0;padding:11px 14px;background:#f8eee3;border-radius:10px}
+  .pedido-productos ul{margin:7px 0 0;padding-left:18px}
+  .pedido-total{font-size:18px;font-weight:800;margin:10px 0}
+  .etiqueta-estado{padding:6px 10px;font-size:12px;font-weight:800;border-radius:999px;background:#f3dfca;color:#77401d}
+  .etiqueta-estado.Pagado{background:#e7f3df;color:#32602b}
+  .etiqueta-estado.Rechazado,.etiqueta-estado.Cancelado{background:#fce4dd;color:#963f2d}
+  .pedido-acciones{display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-top:14px}
+  .pedido-acciones form{display:grid;gap:8px;flex:1 1 225px;max-width:360px}
+  .pedido-acciones label{margin:0}
+  .pedido-acciones input,.pedido-acciones select{width:100%}
+  .pedido-acciones button{width:100%;margin:0}
+  .pedido-acciones button.peligro{background:#963f2d!important}
+  .motivo{margin:12px 0;padding:10px 13px;background:#fce8dd;border-radius:10px}
+  .vacio-pedidos{background:#fffaf4;border:1px solid #e6d2bf;border-radius:15px;padding:25px;text-align:center}
+  @media(max-width:540px){.pedido-datos{grid-template-columns:1fr}.pedido-card{padding:13px}}
+</style>
+</head>
+<body>
+{% include '_navegacion.html' %}
+<main class="contenido principal">
+  <header class="pedidos-intro">
+    <p class="sobretitulo">GESTIÓN DE CLIENTES</p><h1>Pedidos</h1>
+    <p>Revisa los pedidos pendientes, aceptados y rechazados. Aceptar un pedido reserva sus unidades, pero la venta solo se registra después de confirmar el pago.</p>
+  </header>
+  {% with mensajes=get_flashed_messages(with_categories=true) %}
+    {% for categoria,mensaje in mensajes %}<div class="alerta {{ categoria }}" role="alert">{{ mensaje }}</div>{% endfor %}
+  {% endwith %}
+  <nav class="estados" aria-label="Filtrar pedidos por estado">
+    <a href="{{ url_for('pedidos',estado='Todos') }}" class="{{ 'activo' if estado=='Todos' else '' }}">Todos <small>{{ conteos.values()|sum }}</small></a>
+    {% for nombre in estados %}
+      <a href="{{ url_for('pedidos',estado=nombre) }}" class="{{ 'activo' if estado==nombre else '' }}">{{ nombre }} <small>{{ conteos.get(nombre,0) }}</small></a>
+    {% endfor %}
+  </nav>
+  <div class="listado-pedidos">
+    {% for pedido in pedidos %}
+      <article class="pedido-card">
+        <div class="pedido-top">
+          <h2>Pedido #{{ pedido.id }}</h2>
+          <span class="etiqueta-estado {{ pedido.estado }}">{{ pedido.estado }}</span>
+        </div>
+        <p class="pedido-fecha">{{ pedido.creado_en.strftime('%d/%m/%Y %I:%M %p') }}</p>
+        <div class="pedido-datos">
+          <div><small>Cliente</small><strong>{{ pedido.cliente_nombre }}</strong></div>
+          <div><small>Teléfono</small><strong>{{ pedido.cliente_telefono }}</strong></div>
+        </div>
+        <div class="pedido-productos"><strong>Productos solicitados</strong>
+          <ul>{% for d in pedido.detalles %}<li>{{ d.nombre }} × {{ d.cantidad }}</li>{% endfor %}</ul>
+        </div>
+        <p class="pedido-total">Total: RD$ {{ '{:,.2f}'.format(pedido.total) }}</p>
+        {% if pedido.estado == 'Rechazado' and pedido.motivo_rechazo %}
+          <p class="motivo"><strong>Motivo del rechazo:</strong> {{ pedido.motivo_rechazo }}</p>
+        {% endif %}
+        {% if pedido.estado == 'Pagado' and pedido.venta_id %}
+          <p><a href="{{ url_for('recibo',venta_id=pedido.venta_id) }}">Ver factura #{{ pedido.venta_id }} →</a></p>
+        {% endif %}
+
+        {% if pedido.estado == 'Pendiente' %}
+          <div class="pedido-acciones">
+            <form method="post" action="{{ url_for('procesar_pedido',pedido_id=pedido.id,accion='aceptar') }}" onsubmit="return confirm('¿Aceptar y reservar las unidades? Todavía no se registra una venta.')">
+              <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+              <button type="submit">Aceptar pedido</button>
+            </form>
+            <form method="post" action="{{ url_for('procesar_pedido',pedido_id=pedido.id,accion='rechazar') }}" onsubmit="return confirm('¿Rechazar este pedido con el motivo indicado?')">
+              <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+              <label for="motivo-{{ pedido.id }}">Motivo de rechazo</label>
+              <input id="motivo-{{ pedido.id }}" name="motivo_rechazo" placeholder="Ej.: Sin disponibilidad" minlength="5" maxlength="250" required>
+              <button class="peligro" type="submit">Rechazar pedido</button>
+            </form>
+          </div>
+        {% elif pedido.estado == 'Aceptado' %}
+          <div class="pedido-acciones">
+            <form method="post" action="{{ url_for('procesar_pedido',pedido_id=pedido.id,accion='pagar') }}" onsubmit="return confirm('¿Confirmas que ya recibiste el dinero? La venta se registrará al continuar.')">
+              <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+              <label for="pago-{{ pedido.id }}">Método de pago recibido</label>
+              <select id="pago-{{ pedido.id }}" name="metodo_pago" required>
+                <option value="Efectivo">Efectivo</option>
+                <option value="Transferencia">Transferencia</option>
+              </select>
+              <button type="submit">Confirmar pago y registrar venta</button>
+            </form>
+            <form method="post" action="{{ url_for('procesar_pedido',pedido_id=pedido.id,accion='cancelar') }}" onsubmit="return confirm('¿Cancelar el pedido y devolver las unidades al inventario?')">
+              <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+              <button class="peligro" type="submit">Cancelar pedido</button>
+            </form>
+          </div>
+        {% endif %}
+      </article>
+    {% else %}
+      <div class="vacio-pedidos">No hay pedidos en esta categoría.</div>
+    {% endfor %}
+  </div>
+  <p style="font-size:12px;color:#88654b">Se muestran los últimos 100 pedidos según el filtro seleccionado. Las fechas se indican en la hora configurada por el servidor.</p>
+</main>
+__LOGOUT__
+</body></html>

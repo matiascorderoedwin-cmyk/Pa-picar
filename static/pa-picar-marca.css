@@ -9,3 +9,10 @@ button,.boton,input[type=submit]{background:var(--marron)!important;color:white!
 .encabezado-picar{text-align:center;padding:12px 0;border-bottom:2px solid var(--naranja);margin-bottom:18px}.encabezado-picar img{width:240px;max-width:100%;height:auto}.encabezado-picar p{margin:0;color:var(--marron)}
 @media(max-width:720px){.contenido{width:calc(100% - 24px)}.principal{padding-top:18px}.cabecera-interior{padding-block:10px}.entorno{font-size:10px}.marca img{width:75px;height:43px}.acciones a{flex:1 1 43%;text-align:center}.panel{padding:14px}.estadisticas,.columnas,.admin-grid,.ventas-layout,.resumen{grid-template-columns:1fr!important}table{font-size:13px}}
 @media print{body{background:white!important}.no-print,.cabecera,.acciones{display:none!important}.panel{box-shadow:none!important}}
+
+/* Navegación unificada: Productos, Ventas, Pedidos y Administración */
+.nav-principal{width:min(1120px,calc(100% - 32px));margin:15px auto 0!important;padding:0!important;display:flex;align-items:center;flex-wrap:wrap;gap:9px}
+.nav-principal .nav-logo{border:0!important;background:transparent!important;padding:0!important;margin-right:4px}
+.nav-principal .nav-logo img{width:105px;height:57px;object-fit:contain}
+.nav-principal a.activo{background:#77401d!important;color:#fffaf4!important;border-color:#77401d!important}
+@media(max-width:650px){.nav-principal{width:calc(100% - 22px);gap:7px}.nav-principal .nav-logo{flex:1 1 100%;text-align:center;margin:0!important}.nav-principal .nav-logo img{width:93px;height:48px}.nav-principal a:not(.nav-logo){flex:1 1 calc(50% - 7px);text-align:center;padding:9px 7px;font-size:13px}}

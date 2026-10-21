@@ -135,64 +135,28 @@ def crear_usuario():
 
 @app.get("/")
 def inicio():
+    """El panel principal muestra únicamente el catálogo y el alta de productos."""
     productos = []
     base_disponible = True
     try:
         with conectar() as conexion:
             with conexion.cursor(row_factory=dict_row) as cursor:
                 cursor.execute(
-                    "SELECT id, nombre, precio, cantidad "
-                    "FROM productos WHERE activo = TRUE ORDER BY nombre ASC"
+                    "SELECT id, nombre, precio, cantidad, activo "
+                    "FROM productos ORDER BY activo DESC, nombre ASC, id ASC"
                 )
                 productos = cursor.fetchall()
     except psycopg.Error:
-        app.logger.exception("No fue posible consultar la tabla productos")
-        flash("No se pudo consultar PostgreSQL. Revisa la contraseña, el servicio y el nombre de la base.", "error")
+        app.logger.exception("No fue posible consultar los productos")
+        flash("No se pudo consultar el catálogo de productos.", "error")
         base_disponible = False
 
-    # Resumen diario en hora local de República Dominicana (independiente del huso del servidor).
-    resumen = {'total': Decimal('0'), 'facturas': 0, 'efectivo': Decimal('0'), 'transferencia': Decimal('0')}
-    ultimas_ventas = []
-    try:
-        with conectar() as conexion:
-            with conexion.cursor(row_factory=dict_row) as cursor:
-                cursor.execute("""
-                    SELECT COALESCE(SUM(total),0) AS total,
-                           COUNT(*) AS facturas,
-                           COALESCE(SUM(total) FILTER (WHERE metodo_pago='Efectivo'),0) AS efectivo,
-                           COALESCE(SUM(total) FILTER (WHERE metodo_pago='Transferencia'),0) AS transferencia
-                    FROM ventas
-                    WHERE estado='Activa'
-                      AND (fecha AT TIME ZONE 'America/Santo_Domingo')::date =
-                          (CURRENT_TIMESTAMP AT TIME ZONE 'America/Santo_Domingo')::date
-                """)
-                resumen = cursor.fetchone()
-                cursor.execute("""
-                    SELECT id, fecha AT TIME ZONE 'America/Santo_Domingo' AS fecha_local,
-                           total, metodo_pago
-                    FROM ventas WHERE estado='Activa'
-                    ORDER BY fecha DESC LIMIT 5
-                """)
-                ultimas_ventas = cursor.fetchall()
-    except psycopg.Error:
-        app.logger.exception('No se pudo cargar el resumen de ventas')
-        flash('No se pudo consultar el resumen de ventas.', 'error')
-    total_unidades = sum(item["cantidad"] or 0 for item in productos)
-    inventario_bajo = [p for p in productos if (p['cantidad'] or 0) <= 10]
     return render_template(
         "index.html",
         productos=productos,
         cantidad_productos=len(productos),
-        total_unidades=total_unidades,
         base_disponible=base_disponible,
-        total_ventas=resumen['total'],
-        facturas_hoy=resumen['facturas'],
-        ventas_efectivo=resumen['efectivo'],
-        ventas_transferencia=resumen['transferencia'],
-        ultimas_ventas=ultimas_ventas,
-        inventario_bajo=inventario_bajo,
     )
-
 
 @app.post("/productos")
 @solo_admin
@@ -330,42 +294,112 @@ def recibo(venta_id):
 
 @app.get('/ventas')
 def listado_ventas():
+    """Historial de facturas y totales de ventas en hora de República Dominicana."""
+    periodo = request.args.get('periodo', 'todas')
+    filtros = {
+        'todas': 'TRUE',
+        'hoy': """(fecha AT TIME ZONE 'America/Santo_Domingo')::date =
+                  (CURRENT_TIMESTAMP AT TIME ZONE 'America/Santo_Domingo')::date""",
+        'semana': """(fecha AT TIME ZONE 'America/Santo_Domingo') >=
+                     date_trunc('week', CURRENT_TIMESTAMP AT TIME ZONE 'America/Santo_Domingo')""",
+        'mes': """(fecha AT TIME ZONE 'America/Santo_Domingo') >=
+                  date_trunc('month', CURRENT_TIMESTAMP AT TIME ZONE 'America/Santo_Domingo')""",
+    }
+    if periodo not in filtros:
+        periodo = 'todas'
+
     try:
         with conectar() as conexion:
             with conexion.cursor(row_factory=dict_row) as cursor:
-                cursor.execute('SELECT id,fecha,metodo_pago,total,estado FROM ventas ORDER BY id DESC LIMIT 100')
-                ventas=cursor.fetchall()
-        return render_template('ventas.html',ventas=ventas)
+                cursor.execute("""
+                    SELECT
+                        COALESCE(SUM(total) FILTER (WHERE (fecha AT TIME ZONE 'America/Santo_Domingo')::date =
+                            (CURRENT_TIMESTAMP AT TIME ZONE 'America/Santo_Domingo')::date), 0) AS hoy,
+                        COUNT(*) FILTER (WHERE (fecha AT TIME ZONE 'America/Santo_Domingo')::date =
+                            (CURRENT_TIMESTAMP AT TIME ZONE 'America/Santo_Domingo')::date) AS facturas_hoy,
+                        COALESCE(SUM(total) FILTER (WHERE (fecha AT TIME ZONE 'America/Santo_Domingo') >=
+                            date_trunc('week', CURRENT_TIMESTAMP AT TIME ZONE 'America/Santo_Domingo')), 0) AS semana,
+                        COUNT(*) FILTER (WHERE (fecha AT TIME ZONE 'America/Santo_Domingo') >=
+                            date_trunc('week', CURRENT_TIMESTAMP AT TIME ZONE 'America/Santo_Domingo')) AS facturas_semana,
+                        COALESCE(SUM(total) FILTER (WHERE (fecha AT TIME ZONE 'America/Santo_Domingo') >=
+                            date_trunc('month', CURRENT_TIMESTAMP AT TIME ZONE 'America/Santo_Domingo')), 0) AS mes,
+                        COUNT(*) FILTER (WHERE (fecha AT TIME ZONE 'America/Santo_Domingo') >=
+                            date_trunc('month', CURRENT_TIMESTAMP AT TIME ZONE 'America/Santo_Domingo')) AS facturas_mes
+                    FROM ventas WHERE estado = 'Activa'
+                """)
+                resumen = cursor.fetchone()
+                # La condición se elige de un diccionario fijo, nunca se construye
+                # directamente a partir de texto de un usuario.
+                cursor.execute(f"""
+                    SELECT id,
+                           fecha AT TIME ZONE 'America/Santo_Domingo' AS fecha_local,
+                           metodo_pago, total, estado
+                    FROM ventas WHERE {filtros[periodo]}
+                    ORDER BY fecha DESC, id DESC LIMIT 100
+                """)
+                ventas = cursor.fetchall()
+        return render_template('ventas.html',ventas=ventas,resumen=resumen,periodo=periodo)
     except psycopg.Error:
-        flash('Ejecuta primero la migración de la etapa 2.', 'error')
+        app.logger.exception('Error consultando historial de ventas')
+        flash('No fue posible consultar las ventas.', 'error')
         return redirect(url_for('inicio'))
 
 
+@app.get('/pedidos')
+@solo_admin
+def pedidos():
+    """Panel de pedidos separado del inventario, con filtros por estado."""
+    estados = ('Pendiente', 'Aceptado', 'Rechazado', 'Pagado', 'Cancelado')
+    estado = request.args.get('estado', 'Todos')
+    if estado not in ('Todos',) + estados:
+        estado = 'Todos'
+    try:
+        with conectar() as conexion:
+            with conexion.cursor(row_factory=dict_row) as cursor:
+                cursor.execute("SELECT estado, COUNT(*) AS cantidad FROM pedidos GROUP BY estado")
+                conteos = {fila['estado']: fila['cantidad'] for fila in cursor.fetchall()}
+                cursor.execute("""
+                    SELECT p.id,p.cliente_nombre,p.cliente_telefono,p.total,p.estado,
+                           p.creado_en,p.procesado_en,p.motivo_rechazo,p.venta_id,
+                           COALESCE(
+                             json_agg(json_build_object('nombre',d.nombre_producto,
+                                                       'cantidad',d.cantidad,
+                                                       'precio',d.precio_unitario)
+                                      ORDER BY d.id)
+                             FILTER (WHERE d.id IS NOT NULL), '[]'::json
+                           ) AS detalles
+                    FROM pedidos p
+                    LEFT JOIN pedido_detalles d ON d.pedido_id=p.id
+                    WHERE (%s = 'Todos' OR p.estado = %s)
+                    GROUP BY p.id
+                    ORDER BY p.creado_en DESC,p.id DESC
+                    LIMIT 100
+                """, (estado, estado))
+                lista = cursor.fetchall()
+        return render_template('pedidos.html',pedidos=lista,conteos=conteos,estado=estado,estados=estados)
+    except psycopg.Error:
+        app.logger.exception('Error consultando pedidos')
+        flash('No fue posible consultar los pedidos.', 'error')
+        return redirect(url_for('inicio'))
 
 @app.get('/administracion')
 @solo_admin
 def administracion():
+    """Ajustes de productos, movimientos y existencias; pedidos se ven en /pedidos."""
     try:
         with conectar() as conexion:
             with conexion.cursor(row_factory=dict_row) as cursor:
                 cursor.execute('SELECT id,nombre,precio,cantidad,activo FROM productos ORDER BY activo DESC,nombre,id')
-                productos=cursor.fetchall()
-                cursor.execute('SELECT m.id,m.fecha,m.tipo,m.cantidad,m.nota,p.nombre FROM movimientos_inventario m JOIN productos p ON p.id=m.producto_id ORDER BY m.id DESC LIMIT 50')
-                movimientos=cursor.fetchall()
-        with conectar() as conexion:
-            with conexion.cursor(row_factory=dict_row) as cursor:
-                cursor.execute('''SELECT p.id,p.cliente_nombre,p.cliente_telefono,p.total,p.estado,p.creado_en,
-                               COALESCE(json_agg(json_build_object('nombre',d.nombre_producto,'cantidad',d.cantidad,'precio',d.precio_unitario)
-                               ORDER BY d.id) FILTER (WHERE d.id IS NOT NULL),'[]'::json) AS detalles
-                               FROM pedidos p LEFT JOIN pedido_detalles d ON d.pedido_id=p.id
-                               GROUP BY p.id ORDER BY p.creado_en DESC LIMIT 100''')
-                pedidos=cursor.fetchall()
-        return render_template('administracion.html',productos=productos,movimientos=movimientos,pedidos=pedidos)
+                productos = cursor.fetchall()
+                cursor.execute('''SELECT m.id,m.fecha,m.tipo,m.cantidad,m.nota,p.nombre
+                                  FROM movimientos_inventario m JOIN productos p ON p.id=m.producto_id
+                                  ORDER BY m.id DESC LIMIT 50''')
+                movimientos = cursor.fetchall()
+        return render_template('administracion.html',productos=productos,movimientos=movimientos)
     except psycopg.Error:
         app.logger.exception('Error en administración')
-        flash('No se pudo abrir administración. Ejecuta migracion_etapa3.sql.', 'error')
+        flash('No se pudo abrir administración. Comprueba la conexión y las tablas de inventario.', 'error')
         return redirect(url_for('inicio'))
-
 
 def validar_csrf():
     if not secrets.compare_digest(request.form.get('csrf',''),session.get('csrf','')):
@@ -613,8 +647,14 @@ def procesar_pedido(pedido_id, accion):
                 if accion in ('pagar','cancelar') and estado != 'Aceptado':
                     raise ValueError('Solo se pueden cobrar o cancelar pedidos aceptados.')
                 if accion=='rechazar':
-                    cursor.execute("UPDATE pedidos SET estado='Rechazado',procesado_en=now() WHERE id=%s", (pedido_id,))
-                    mensaje='Pedido rechazado.'
+                    motivo_rechazo = request.form.get('motivo_rechazo', '').strip()
+                    if not 5 <= len(motivo_rechazo) <= 250:
+                        raise ValueError('Explica el motivo del rechazo (5 a 250 caracteres).')
+                    cursor.execute(
+                        "UPDATE pedidos SET estado='Rechazado',motivo_rechazo=%s,procesado_en=now() WHERE id=%s",
+                        (motivo_rechazo,pedido_id)
+                    )
+                    mensaje='Pedido rechazado con motivo registrado.'
                 else:
                     cursor.execute('SELECT producto_id,cantidad,nombre_producto,precio_unitario FROM pedido_detalles WHERE pedido_id=%s ORDER BY producto_id', (pedido_id,))
                     detalles=cursor.fetchall()
@@ -655,7 +695,8 @@ def procesar_pedido(pedido_id, accion):
     except psycopg.Error:
         app.logger.exception('Error procesando pedido')
         flash('No se pudo procesar el pedido.','error')
-    return redirect(url_for('administracion')+'#pedidos')
+    return redirect(url_for('pedidos', estado={'aceptar':'Aceptado','rechazar':'Rechazado',
+                                                'cancelar':'Cancelado','pagar':'Pagado'}[accion]))
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)

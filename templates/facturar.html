@@ -31,14 +31,11 @@
 </style>
 </head>
 <body>
-<div class="nav-picar no-print" style="max-width:1120px;margin:14px auto 0;padding:0 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-<a href="{{ url_for('inicio') }}" style="padding:3px"><img src="{{ url_for('static',filename='logo-pa-picar.png') }}" alt="Pa Picar" style="width:120px;height:auto;display:block"></a>
-<a href="{{ url_for('inicio') }}">Inicio</a><a href="{{ url_for('facturar') }}">Facturar</a><a href="{{ url_for('listado_ventas') }}">Ventas</a>
-{% if usuario_actual.rol == 'administrador' %}<a href="{{ url_for('administracion') }}">Administración</a><a href="{{ url_for('reportes') }}">Reportes</a>{% endif %}
-</div>
+{% include '_navegacion.html' %}
+
 <header class="cabecera"><div class="contenido cabecera-interior"><a class="marca" href="{{ url_for('inicio') }}">Pa Picar</a><span class="entorno">FACTURACIÓN</span></div></header>
 <main class="contenido principal factura-unica">
-<p><a href="{{ url_for('inicio') }}">← Inicio</a> · <a href="{{ url_for('listado_ventas') }}">Historial</a></p>
+<p><a href="{{ url_for('listado_ventas') }}">← Volver a Ventas</a></p>
 <h1>Nueva factura</h1>
 {% with mensajes=get_flashed_messages(with_categories=true) %}{% for cat,msg in mensajes %}<div class="alerta {{cat}}">{{msg}}</div>{% endfor %}{% endwith %}
 <section class="panel">
