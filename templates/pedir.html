@@ -50,11 +50,21 @@
     .opcion-entrega { display: flex; align-items: center; gap: 11px; border: 1px solid #e5cbb7; background: #fffdfb; border-radius: 11px; padding: 11px; margin: 0; cursor: pointer; font-weight: 600; }
     .opcion-entrega input { width: 18px; min-width: 18px; accent-color: #77401d; margin: 0; }
     .opcion-entrega small { display: block; color: #86664f; font-weight: 400; }
-    .campos-fecha { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .campo-entrega { margin-top: 7px; }
+    .campo-entrega input { display:block; width:100%; max-width:100%; padding:11px 10px; font-size:16px; }
+    .relleno-eleccion { flex-basis:100%; width:100%; order:3; background:#fcf1e7; border:1px solid #e4c6aa; border-radius:10px; padding:10px; display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+    .relleno-eleccion label { margin:0; width:100%; }
+    .relleno-eleccion select { flex:1 1 140px; padding:9px; min-height:42px; min-width:0; background:white; color:#63391f; border:1px solid #d8b99e; border-radius:9px; font:inherit; }
+    .relleno-eleccion button { padding:9px 12px; flex:1 1 130px; }
+    .producto { flex-wrap:wrap; }
+    .aviso-opcional { margin:12px 0 4px; background:#f9eddf; border-radius:10px; padding:11px; }
+    .aviso-opcional button { padding:9px 12px; margin-top:7px; width:100%; }
+    .aviso-opcional p { font-size:12px; margin:0; color:#75523c; }
+    .reloj-compacto { font-size:12px; color:#835c43; margin:6px 0 4px; }
     textarea { width: 100%; min-width: 0; border: 1px solid #d8b99e; background: white; color: #63391f; padding: 10px 11px; border-radius: 9px; font: inherit; resize: vertical; }
     .ayuda-entrega { font-size: 12px; color: #835c43; }
     .titulo-entrega { font-size: 14px; font-weight: 800; margin: 15px 0 4px; }
-    @media (max-width: 380px) { .campos-fecha { grid-template-columns: 1fr; } }
+
     @media (max-width: 440px) {
       .wrap { padding: 10px 10px 22px; }
       .card { padding: 12px; }
@@ -95,6 +105,16 @@
               <div class="precio">RD$ {{ '%.2f'|format(p.precio) }}</div>
             </div>
             <button type="button" class="agregar" aria-label="Agregar {{ p.nombre }} al pedido">Agregar</button>
+            <div class="relleno-eleccion" hidden>
+              <label for="relleno-{{ p.id }}">¿De qué quieres los tarticos?</label>
+              <select id="relleno-{{ p.id }}" class="relleno-select">
+                <option value="">Elige el relleno</option>
+                <option value="pizza">Pizza</option>
+                <option value="atun">Atún</option>
+                <option value="pollo">Pollo</option>
+              </select>
+              <button type="button" class="confirmar-relleno">Agregar relleno seleccionado</button>
+            </div>
           </div>
         {% else %}
           <p class="vacio">No hay productos disponibles en este momento.</p>
@@ -106,6 +126,7 @@
     <form id="form-pedido" method="post" action="{{ url_for('enviar_pedido') }}">
       <input type="hidden" name="csrf" value="{{ csrf_token() }}">
       <input type="hidden" name="items" id="items">
+      <input type="hidden" name="push_subscription" id="push_subscription">
       <div class="trampa" aria-hidden="true"><input name="sitio_web" tabindex="-1" autocomplete="off"></div>
       <section class="card" aria-labelledby="titulo-pedido">
         <h2 id="titulo-pedido">Tu pedido</h2>
@@ -120,7 +141,7 @@
         <h2 id="titulo-cliente">Tus datos</h2>
         <label for="nombre">Nombre</label>
         <input id="nombre" name="nombre" required minlength="2" maxlength="100" autocomplete="name">
-        <label for="telefono">Teléfono de contacto</label>
+        <label for="telefono">WhatsApp de contacto</label>
         <input id="telefono" name="telefono" type="tel" required minlength="7" maxlength="30" autocomplete="tel">
       </section>
 
@@ -145,24 +166,21 @@
             placeholder="Calle, número, sector y referencia"></textarea>
         </div>
 
-        <div class="titulo-entrega">¿Cuándo quieres recibir tu pedido?</div>
-        <div class="campos-fecha">
-          <div>
-            <label for="fecha_entrega">Fecha deseada</label>
-            <input id="fecha_entrega" name="fecha_entrega" type="date" required>
-          </div>
-          <div>
-            <label for="hora_entrega">Hora deseada (R.D.)</label>
-            <input id="hora_entrega" name="hora_entrega" type="time" step="60" required>
-          </div>
+        <div class="campo-entrega">
+          <label for="fecha_hora_entrega">Fecha y hora de entrega (República Dominicana)</label>
+          <input id="fecha_hora_entrega" name="fecha_hora_entrega" type="datetime-local" step="60" required>
+          <p class="reloj-compacto">Ahora en R.D.: <strong id="reloj-rd">Calculando...</strong>. Sujeto a confirmación.</p>
         </div>
-        <p class="ayuda-entrega">Hora actual en República Dominicana: <strong id="reloj-rd">Calculando...</strong>.
-          La fecha y hora solicitadas están sujetas a confirmación.</p>
 
         <label for="comentarios">Comentarios para tu pedido (opcional)</label>
         <textarea id="comentarios" name="comentarios" rows="3" maxlength="500"
           placeholder="Ej.: Sin picante, un detalle de la entrega o cualquier indicación."></textarea>
-        <p class="ayuda">El envío no realiza un cobro ni reserva inventario. Confirmaremos disponibilidad y pago.</p>
+        <p class="ayuda">El envío no realiza un cobro ni reserva inventario. Confirmaremos disponibilidad y pago por WhatsApp.</p>
+        <div class="aviso-opcional">
+          <p>Al enviar, verás una confirmación en pantalla. Si tienes Pa Picar instalado como app, también puedes activar un aviso en tu celular.</p>
+          <button id="activar-aviso-cliente" type="button" hidden>Activar aviso de pedido recibido</button>
+          <p id="estado-aviso-cliente" role="status" aria-live="polite"></p>
+        </div>
         <button id="enviar" type="submit" class="enviar">Enviar pedido</button>
       </section>
     </form>
@@ -192,7 +210,8 @@
           detalle.className = 'detalle';
           const nombre = document.createElement('div');
           nombre.className = 'nombre';
-          nombre.textContent = item.nombre;
+          const bonito = {pizza:'Pizza', atun:'Atún', pollo:'Pollo'};
+          nombre.textContent = item.nombre + (item.relleno ? ' · ' + bonito[item.relleno] : '');
           const subtotal = document.createElement('div');
           subtotal.className = 'precio';
           subtotal.textContent = moneda(item.precio * item.cantidad);
@@ -207,14 +226,14 @@
             boton.setAttribute('aria-label', etiqueta + item.nombre);
             boton.addEventListener('click', () => {
               item.cantidad += cambio;
-              if (item.cantidad <= 0) carrito.delete(item.id);
-              else if (item.cantidad > item.max) {
-                item.cantidad = item.max;
-                alert('No se pueden agregar más unidades de este producto.');
+              if (item.cantidad <= 0) carrito.delete(item.clave);
+              else if (unidadesTotales(item.id) > item.max) {
+                item.cantidad -= cambio;
+                alert('No hay más unidades disponibles de este producto.');
               }
               pintarCarrito();
             });
-            if (cambio > 0 && item.cantidad >= item.max) boton.disabled = true;
+            if (cambio > 0 && unidadesTotales(item.id) >= item.max) boton.disabled = true;
             controles.append(boton);
             if (cambio < 0) {
               const cuenta = document.createElement('input');
@@ -222,28 +241,30 @@
               cuenta.type = 'number';
               cuenta.inputMode = 'numeric';
               cuenta.min = '1';
-              cuenta.max = String(item.max);
+              cuenta.max = String(item.max - unidadesTotales(item.id) + item.cantidad);
               cuenta.step = '1';
               cuenta.value = String(item.cantidad);
               cuenta.setAttribute('aria-label', 'Cantidad de ' + item.nombre);
               cuenta.addEventListener('input', () => {
                 const cantidad = Number(cuenta.value);
-                if (Number.isInteger(cantidad) && cantidad >= 1 && cantidad <= item.max) {
+                if (Number.isInteger(cantidad) && cantidad >= 1 &&
+                    cantidad + unidadesTotales(item.id) - item.cantidad <= item.max) {
                   item.cantidad = cantidad;
                   cuenta.setCustomValidity('');
                   actualizarTotales();
                 } else {
-                  cuenta.setCustomValidity('Escribe un número entero entre 1 y ' + item.max + '.');
+                  cuenta.setCustomValidity('Escribe una cantidad válida disponible.');
                 }
               });
               cuenta.addEventListener('change', () => {
                 const cantidad = Number(cuenta.value);
                 if (Number.isInteger(cantidad) && cantidad === 0) {
-                  carrito.delete(item.id);
+                  carrito.delete(item.clave);
                   pintarCarrito();
                   return;
                 }
-                if (!Number.isInteger(cantidad) || cantidad < 1 || cantidad > item.max) {
+                if (!Number.isInteger(cantidad) || cantidad < 1 ||
+                    cantidad + unidadesTotales(item.id) - item.cantidad > item.max) {
                   alert('La cantidad debe estar entre 1 y ' + item.max + '.');
                   cuenta.value = String(item.cantidad);
                   cuenta.setCustomValidity('');
@@ -259,6 +280,12 @@
         actualizarTotales();
       }
 
+      function unidadesTotales(id) {
+        return [...carrito.values()]
+          .filter(item => item.id === id)
+          .reduce((cantidad, item) => cantidad + item.cantidad, 0);
+      }
+
       function actualizarTotales() {
         const subtotal = [...carrito.values()].reduce(
           (sum, producto) => sum + producto.cantidad * producto.precio, 0
@@ -270,30 +297,57 @@
         document.getElementById('total').textContent = moneda(subtotal + costo);
       }
 
-      for (const producto of productos) {
-        producto.querySelector('.agregar').addEventListener('click', () => {
-          const id = Number(producto.dataset.id);
-          const existente = carrito.get(id);
-          if (existente) {
-            if (existente.cantidad >= existente.max) {
-              alert('No se pueden agregar más unidades de este producto.');
-              return;
-            }
-            existente.cantidad++;
-          } else {
-            if (carrito.size >= 30) {
-              alert('Un pedido admite un máximo de 30 productos distintos.');
-              return;
-            }
-            carrito.set(id, {
-              id,
-              nombre: producto.dataset.nombre,
-              precio: Number(producto.dataset.precio),
-              cantidad: 1,
-              max: Number(producto.dataset.max)
-            });
+      function agregarAlCarrito(producto, relleno='') {
+        const id=Number(producto.dataset.id);
+        const max=Number(producto.dataset.max);
+        if (unidadesTotales(id) >= max) {
+          alert('No hay más unidades disponibles de este producto.');
+          return;
+        }
+        const clave=id+':'+relleno;
+        const existente=carrito.get(clave);
+        if (existente) {
+          existente.cantidad++;
+        } else {
+          if (carrito.size >= 30) {
+            alert('Un pedido admite un máximo de 30 variedades.');
+            return;
           }
-          pintarCarrito();
+          carrito.set(clave,{
+            clave,id,relleno,
+            nombre:producto.dataset.nombre,
+            precio:Number(producto.dataset.precio),
+            cantidad:1,max
+          });
+        }
+        pintarCarrito();
+      }
+
+      function esTartico(nombre) {
+        return nombre.toLocaleLowerCase('es')
+          .normalize('NFD').replace(/[\u0300-\u036f]/g,'').includes('tartic');
+      }
+
+      for (const producto of productos) {
+        const elegir=producto.querySelector('.relleno-eleccion');
+        const selector=elegir.querySelector('.relleno-select');
+        const requiereRelleno=esTartico(producto.dataset.nombre);
+        producto.querySelector('.agregar').addEventListener('click',()=>{
+          if (requiereRelleno) {
+            elegir.hidden=!elegir.hidden;
+            if (!elegir.hidden) selector.focus();
+          } else {
+            agregarAlCarrito(producto);
+          }
+        });
+        elegir.querySelector('.confirmar-relleno').addEventListener('click',()=>{
+          if (!selector.value) {
+            alert('Selecciona si los tarticos son de Pizza, Atún o Pollo.');
+            selector.focus();
+            return;
+          }
+          agregarAlCarrito(producto,selector.value);
+          elegir.hidden=true;
         });
       }
 
@@ -319,36 +373,69 @@
 
       // Fecha y hora locales de República Dominicana, sin depender de la zona
       // configurada en el iPhone del cliente.
-      const inputFecha = document.getElementById('fecha_entrega');
-      const inputHora = document.getElementById('hora_entrega');
-      const direccion = document.getElementById('direccion-entrega');
-      const inputDireccion = document.getElementById('direccion_entrega');
+      const fechaHora=document.getElementById('fecha_hora_entrega');
+      const direccion=document.getElementById('direccion-entrega');
+      const inputDireccion=document.getElementById('direccion_entrega');
       function horaRD() {
-        const partes = new Intl.DateTimeFormat('es-DO', {
-          timeZone: 'America/Santo_Domingo', year: 'numeric', month: '2-digit',
-          day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+        const partes=new Intl.DateTimeFormat('es-DO',{
+          timeZone:'America/Santo_Domingo',year:'numeric',month:'2-digit',
+          day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'
         }).formatToParts(new Date());
-        const valor = tipo => partes.find(p => p.type === tipo)?.value || '';
-        const fecha = valor('year') + '-' + valor('month') + '-' + valor('day');
-        const hora = valor('hour') + ':' + valor('minute');
-        return { fecha, hora, mostrar: valor('day') + '/' + valor('month') + '/' + valor('year') + ' ' + hora };
+        const valor=tipo=>partes.find(p=>p.type===tipo)?.value||'';
+        return {
+          fecha:valor('year')+'-'+valor('month')+'-'+valor('day'),
+          hora:valor('hour')+':'+valor('minute'),
+          mostrar:valor('day')+'/'+valor('month')+'/'+valor('year')+' '+valor('hour')+':'+valor('minute')
+        };
       }
       function refrescarHora() {
-        const ahora = horaRD();
-        document.getElementById('reloj-rd').textContent = ahora.mostrar;
-        inputFecha.min = ahora.fecha;
-        const partes = ahora.fecha.split('-').map(Number);
-        const ultimo = new Date(Date.UTC(partes[0], partes[1] - 1, partes[2] + 60));
-        inputFecha.max = ultimo.toISOString().slice(0, 10);
-        inputHora.min = inputFecha.value === ahora.fecha ? ahora.hora : '00:00';
+        const ahora=horaRD();
+        const actual=ahora.fecha+'T'+ahora.hora;
+        document.getElementById('reloj-rd').textContent=ahora.mostrar;
+        fechaHora.min=actual;
+        const p=ahora.fecha.split('-').map(Number);
+        const tope=new Date(Date.UTC(p[0],p[1]-1,p[2]+60));
+        fechaHora.max=tope.toISOString().slice(0,10)+'T23:59';
+        if (!fechaHora.value) fechaHora.value=actual;
       }
-      const ahoraInicial = horaRD();
-      inputFecha.value = ahoraInicial.fecha;
-      inputHora.value = ahoraInicial.hora;
-      inputFecha.addEventListener('change', refrescarHora);
-      inputHora.addEventListener('focus', refrescarHora);
       refrescarHora();
-      setInterval(refrescarHora, 30000);
+      fechaHora.addEventListener('focus',refrescarHora);
+      setInterval(refrescarHora,30000);
+
+      // Aviso voluntario: iPhone exige abrir como app de pantalla de inicio.
+      const botonAviso=document.getElementById('activar-aviso-cliente');
+      const estadoAviso=document.getElementById('estado-aviso-cliente');
+      const clavePublica="BASKIzh-3FRniMBGb2nzh7LqhuCHjYS_YTAbqJUGmUkn_jUKZmAPHO38kcSOYW8Hpbc8k2_7l_sX4T-OJ6pJL_Y";
+      function convertirClave(clave) {
+        const base64=clave.replace(/-/g,'+').replace(/_/g,'/');
+        const bytes=atob(base64.padEnd(Math.ceil(base64.length/4)*4,'='));
+        return Uint8Array.from(bytes,c=>c.charCodeAt(0));
+      }
+      if ('Notification' in window && 'serviceWorker' in navigator &&
+          'PushManager' in window && clavePublica) {
+        botonAviso.hidden=false;
+      }
+      botonAviso.addEventListener('click', async ()=>{
+        // El permiso se solicita inmediatamente desde el toque del cliente.
+        const solicitud=Notification.requestPermission();
+        botonAviso.disabled=true;
+        try {
+          if (await solicitud !== 'granted') {
+            estadoAviso.textContent='Sin permiso. El recibo seguirá apareciendo en pantalla.';
+            return;
+          }
+          const registro=await navigator.serviceWorker.ready;
+          const suscripcion=await registro.pushManager.subscribe({
+            userVisibleOnly:true,applicationServerKey:convertirClave(clavePublica)
+          });
+          document.getElementById('push_subscription').value=JSON.stringify(suscripcion.toJSON());
+          estadoAviso.textContent='Aviso activado. Te notificaremos al recibir el pedido.';
+          botonAviso.textContent='Aviso activado';
+        } catch(err) {
+          estadoAviso.textContent='El dispositivo no pudo activar el aviso. Verás la confirmación en pantalla.';
+          botonAviso.disabled=false;
+        }
+      });
 
       for (const radio of document.querySelectorAll('input[name="tipo_entrega"]')) {
         radio.addEventListener('change', () => {
@@ -361,8 +448,7 @@
 
       form.addEventListener('submit', evento => {
         const ahora = horaRD();
-        if (!inputFecha.value || !inputHora.value
-            || (inputFecha.value + 'T' + inputHora.value) < (ahora.fecha + 'T' + ahora.hora)) {
+        if (!fechaHora.value || fechaHora.value < (ahora.fecha + 'T' + ahora.hora)) {
           evento.preventDefault();
           alert('Selecciona una fecha y hora actuales o futuras en República Dominicana.');
           return;
@@ -378,7 +464,7 @@
           return;
         }
         document.getElementById('items').value = JSON.stringify(
-          [...carrito.values()].map(({id, cantidad}) => ({id, cantidad}))
+          [...carrito.values()].map(({id, cantidad, relleno}) => ({id, cantidad, relleno}))
         );
         const enviar = document.getElementById('enviar');
         enviar.disabled = true;
