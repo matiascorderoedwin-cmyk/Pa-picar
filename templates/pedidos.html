@@ -61,14 +61,19 @@
           <h2>Pedido #{{ pedido.id }}</h2>
           <span class="etiqueta-estado {{ pedido.estado }}">{{ pedido.estado }}</span>
         </div>
-        <p class="pedido-fecha">{{ pedido.creado_en.strftime('%d/%m/%Y %I:%M %p') }}</p>
+        <p class="pedido-fecha">Recibido: {{ pedido.creado_en|hora_rd }}</p>
         <div class="pedido-datos">
           <div><small>Cliente</small><strong>{{ pedido.cliente_nombre }}</strong></div>
           <div><small>Teléfono</small><strong>{{ pedido.cliente_telefono }}</strong></div>
+          <div><small>Modalidad</small><strong>{{ 'Delivery' if pedido.modalidad == 'delivery' else 'Pasar a recoger' }}</strong></div>
+          <div><small>Fecha y hora solicitadas (República Dominicana)</small><strong>{{ pedido.entrega_en|hora_rd }}</strong></div>
         </div>
+        {% if pedido.direccion_entrega %}<p><strong>Dirección:</strong> {{ pedido.direccion_entrega }}</p>{% endif %}
+        {% if pedido.nota %}<p style="white-space:pre-wrap;overflow-wrap:anywhere"><strong>Comentarios:</strong> {{ pedido.nota }}</p>{% endif %}
         <div class="pedido-productos"><strong>Productos solicitados</strong>
           <ul>{% for d in pedido.detalles %}<li>{{ d.nombre }} × {{ d.cantidad }}</li>{% endfor %}</ul>
         </div>
+        <p>Productos: RD$ {{ '{:,.2f}'.format(pedido.total - pedido.costo_delivery) }} · Delivery: RD$ {{ '{:,.2f}'.format(pedido.costo_delivery) }}</p>
         <p class="pedido-total">Total: RD$ {{ '{:,.2f}'.format(pedido.total) }}</p>
         {% if pedido.estado == 'Rechazado' and pedido.motivo_rechazo %}
           <p class="motivo"><strong>Motivo del rechazo:</strong> {{ pedido.motivo_rechazo }}</p>
@@ -112,7 +117,7 @@
       <div class="vacio-pedidos">No hay pedidos en esta categoría.</div>
     {% endfor %}
   </div>
-  <p style="font-size:12px;color:#88654b">Se muestran los últimos 100 pedidos según el filtro seleccionado. Las fechas se indican en la hora configurada por el servidor.</p>
+  <p style="font-size:12px;color:#88654b">Se muestran los últimos 100 pedidos según el filtro seleccionado. Las fechas se indican en America/Santo_Domingo.</p>
 </main>
 <form class="salir-flotante no-print" method="post" action="{{ url_for('logout') }}">
   <input type="hidden" name="csrf" value="{{ csrf_token() }}">
