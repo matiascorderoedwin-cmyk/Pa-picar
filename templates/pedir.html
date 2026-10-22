@@ -42,6 +42,19 @@
     .enviar { width: 100%; padding: 12px; margin-top: 12px; font-size: 14px; }
     .error { background: #ffe6df; color: #852d1b; border-radius: 9px; padding: 10px; margin-bottom: 10px; }
     .trampa { position: absolute; left: -10000px; height: 1px; width: 1px; overflow: hidden; }
+    .numero-input { width: 66px; min-width: 58px; padding: 6px 3px; text-align: center; font-size: 15px; font-weight: 750; }
+    .linea-precio { display: flex; align-items: baseline; justify-content: space-between; gap: 9px; padding-top: 8px; color: #805c45; font-size: 13px; }
+    .linea-precio strong { color: #63391f; white-space: nowrap; }
+    [hidden] { display: none !important; }
+    .opciones-entrega { display: grid; gap: 9px; margin: 11px 0 14px; }
+    .opcion-entrega { display: flex; align-items: center; gap: 11px; border: 1px solid #e5cbb7; background: #fffdfb; border-radius: 11px; padding: 11px; margin: 0; cursor: pointer; font-weight: 600; }
+    .opcion-entrega input { width: 18px; min-width: 18px; accent-color: #77401d; margin: 0; }
+    .opcion-entrega small { display: block; color: #86664f; font-weight: 400; }
+    .campos-fecha { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    textarea { width: 100%; min-width: 0; border: 1px solid #d8b99e; background: white; color: #63391f; padding: 10px 11px; border-radius: 9px; font: inherit; resize: vertical; }
+    .ayuda-entrega { font-size: 12px; color: #835c43; }
+    .titulo-entrega { font-size: 14px; font-weight: 800; margin: 15px 0 4px; }
+    @media (max-width: 380px) { .campos-fecha { grid-template-columns: 1fr; } }
     @media (max-width: 440px) {
       .wrap { padding: 10px 10px 22px; }
       .card { padding: 12px; }
@@ -99,6 +112,8 @@
         <div id="carrito">
           <p class="vacio">Todavía no has seleccionado productos.</p>
         </div>
+        <div class="linea-precio"><span>Subtotal de productos</span><strong id="subtotal">RD$ 0.00</strong></div>
+        <div id="fila-delivery" class="linea-precio" hidden><span>Servicio de delivery</span><strong>RD$ 100.00</strong></div>
         <div class="total"><span>Total estimado</span><span id="total">RD$ 0.00</span></div>
       </section>
       <section class="card" aria-labelledby="titulo-cliente">
@@ -107,7 +122,47 @@
         <input id="nombre" name="nombre" required minlength="2" maxlength="100" autocomplete="name">
         <label for="telefono">Teléfono de contacto</label>
         <input id="telefono" name="telefono" type="tel" required minlength="7" maxlength="30" autocomplete="tel">
-        <p class="ayuda">El pedido no genera un cobro ni reserva inventario. Confirmaremos disponibilidad y pago.</p>
+      </section>
+
+      <section class="card" aria-labelledby="titulo-entrega">
+        <h2 id="titulo-entrega">Entrega y comentarios</h2>
+
+        <div class="titulo-entrega">¿Cómo quieres recibir tu pedido?</div>
+        <div class="opciones-entrega">
+          <label class="opcion-entrega">
+            <input type="radio" name="tipo_entrega" value="recoger" checked>
+            <span>Pasar a recoger <small>Sin costo adicional</small></span>
+          </label>
+          <label class="opcion-entrega">
+            <input type="radio" name="tipo_entrega" value="delivery">
+            <span>Delivery a domicilio <small>Costo adicional: RD$ 100.00</small></span>
+          </label>
+        </div>
+
+        <div id="direccion-delivery" hidden>
+          <label for="direccion_entrega">Dirección para la entrega</label>
+          <textarea id="direccion_entrega" name="direccion_entrega" rows="2" maxlength="300"
+            placeholder="Calle, número, sector y referencia"></textarea>
+        </div>
+
+        <div class="titulo-entrega">¿Cuándo quieres recibir tu pedido?</div>
+        <div class="campos-fecha">
+          <div>
+            <label for="fecha_entrega">Fecha deseada</label>
+            <input id="fecha_entrega" name="fecha_entrega" type="date" required>
+          </div>
+          <div>
+            <label for="hora_entrega">Hora deseada (R.D.)</label>
+            <input id="hora_entrega" name="hora_entrega" type="time" step="60" required>
+          </div>
+        </div>
+        <p class="ayuda-entrega">Hora actual en República Dominicana: <strong id="reloj-rd">Calculando...</strong>.
+          La fecha y hora solicitadas están sujetas a confirmación.</p>
+
+        <label for="comentarios">Comentarios para tu pedido (opcional)</label>
+        <textarea id="comentarios" name="comentarios" rows="3" maxlength="500"
+          placeholder="Ej.: Sin picante, un detalle de la entrega o cualquier indicación."></textarea>
+        <p class="ayuda">El envío no realiza un cobro ni reserva inventario. Confirmaremos disponibilidad y pago.</p>
         <button id="enviar" type="submit" class="enviar">Enviar pedido</button>
       </section>
     </form>
@@ -131,7 +186,6 @@
           lista.append(mensaje);
         }
         for (const item of carrito.values()) {
-          total += item.cantidad * item.precio;
           const fila = document.createElement('div');
           fila.className = 'linea-carrito';
           const detalle = document.createElement('div');
@@ -163,16 +217,57 @@
             if (cambio > 0 && item.cantidad >= item.max) boton.disabled = true;
             controles.append(boton);
             if (cambio < 0) {
-              const cuenta = document.createElement('span');
-              cuenta.className = 'numero';
-              cuenta.textContent = String(item.cantidad);
+              const cuenta = document.createElement('input');
+              cuenta.className = 'numero-input';
+              cuenta.type = 'number';
+              cuenta.inputMode = 'numeric';
+              cuenta.min = '1';
+              cuenta.max = String(item.max);
+              cuenta.step = '1';
+              cuenta.value = String(item.cantidad);
+              cuenta.setAttribute('aria-label', 'Cantidad de ' + item.nombre);
+              cuenta.addEventListener('input', () => {
+                const cantidad = Number(cuenta.value);
+                if (Number.isInteger(cantidad) && cantidad >= 1 && cantidad <= item.max) {
+                  item.cantidad = cantidad;
+                  cuenta.setCustomValidity('');
+                  actualizarTotales();
+                } else {
+                  cuenta.setCustomValidity('Escribe un número entero entre 1 y ' + item.max + '.');
+                }
+              });
+              cuenta.addEventListener('change', () => {
+                const cantidad = Number(cuenta.value);
+                if (Number.isInteger(cantidad) && cantidad === 0) {
+                  carrito.delete(item.id);
+                  pintarCarrito();
+                  return;
+                }
+                if (!Number.isInteger(cantidad) || cantidad < 1 || cantidad > item.max) {
+                  alert('La cantidad debe estar entre 1 y ' + item.max + '.');
+                  cuenta.value = String(item.cantidad);
+                  cuenta.setCustomValidity('');
+                }
+                pintarCarrito();
+              });
               controles.append(cuenta);
             }
           }
           fila.append(detalle, controles);
           lista.append(fila);
         }
-        document.getElementById('total').textContent = moneda(total);
+        actualizarTotales();
+      }
+
+      function actualizarTotales() {
+        const subtotal = [...carrito.values()].reduce(
+          (sum, producto) => sum + producto.cantidad * producto.precio, 0
+        );
+        const aDomicilio = document.querySelector('input[name="tipo_entrega"]:checked')?.value === 'delivery';
+        const costo = aDomicilio ? 100 : 0;
+        document.getElementById('subtotal').textContent = moneda(subtotal);
+        document.getElementById('fila-delivery').hidden = !aDomicilio;
+        document.getElementById('total').textContent = moneda(subtotal + costo);
       }
 
       for (const producto of productos) {
@@ -222,7 +317,61 @@
         }
       });
 
+      // Fecha y hora locales de República Dominicana, sin depender de la zona
+      // configurada en el iPhone del cliente.
+      const inputFecha = document.getElementById('fecha_entrega');
+      const inputHora = document.getElementById('hora_entrega');
+      const direccion = document.getElementById('direccion-entrega');
+      const inputDireccion = document.getElementById('direccion_entrega');
+      function horaRD() {
+        const partes = new Intl.DateTimeFormat('es-DO', {
+          timeZone: 'America/Santo_Domingo', year: 'numeric', month: '2-digit',
+          day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+        }).formatToParts(new Date());
+        const valor = tipo => partes.find(p => p.type === tipo)?.value || '';
+        const fecha = valor('year') + '-' + valor('month') + '-' + valor('day');
+        const hora = valor('hour') + ':' + valor('minute');
+        return { fecha, hora, mostrar: valor('day') + '/' + valor('month') + '/' + valor('year') + ' ' + hora };
+      }
+      function refrescarHora() {
+        const ahora = horaRD();
+        document.getElementById('reloj-rd').textContent = ahora.mostrar;
+        inputFecha.min = ahora.fecha;
+        const partes = ahora.fecha.split('-').map(Number);
+        const ultimo = new Date(Date.UTC(partes[0], partes[1] - 1, partes[2] + 60));
+        inputFecha.max = ultimo.toISOString().slice(0, 10);
+        inputHora.min = inputFecha.value === ahora.fecha ? ahora.hora : '00:00';
+      }
+      const ahoraInicial = horaRD();
+      inputFecha.value = ahoraInicial.fecha;
+      inputHora.value = ahoraInicial.hora;
+      inputFecha.addEventListener('change', refrescarHora);
+      inputHora.addEventListener('focus', refrescarHora);
+      refrescarHora();
+      setInterval(refrescarHora, 30000);
+
+      for (const radio of document.querySelectorAll('input[name="tipo_entrega"]')) {
+        radio.addEventListener('change', () => {
+          const esDelivery = document.querySelector('input[name="tipo_entrega"]:checked').value === 'delivery';
+          direccion.hidden = !esDelivery;
+          inputDireccion.required = esDelivery;
+          actualizarTotales();
+        });
+      }
+
       form.addEventListener('submit', evento => {
+        const ahora = horaRD();
+        if (!inputFecha.value || !inputHora.value
+            || (inputFecha.value + 'T' + inputHora.value) < (ahora.fecha + 'T' + ahora.hora)) {
+          evento.preventDefault();
+          alert('Selecciona una fecha y hora actuales o futuras en República Dominicana.');
+          return;
+        }
+        if ([...document.querySelectorAll('.numero-input')].some(campo => !campo.checkValidity())) {
+          evento.preventDefault();
+          alert('Revisa las cantidades del pedido.');
+          return;
+        }
         if (carrito.size === 0) {
           evento.preventDefault();
           alert('Agrega al menos un producto antes de enviar el pedido.');
