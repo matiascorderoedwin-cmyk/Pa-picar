@@ -425,7 +425,8 @@
             return;
           }
           const registro=await navigator.serviceWorker.ready;
-          const suscripcion=await registro.pushManager.subscribe({
+          let suscripcion=await registro.pushManager.getSubscription();
+          if (!suscripcion) suscripcion=await registro.pushManager.subscribe({
             userVisibleOnly:true,applicationServerKey:convertirClave(clavePublica)
           });
           document.getElementById('push_subscription').value=JSON.stringify(suscripcion.toJSON());

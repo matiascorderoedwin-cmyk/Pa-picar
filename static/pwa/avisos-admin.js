@@ -9,7 +9,8 @@
   const estado=document.getElementById('estado-alertas');
   const clave=conf.dataset.clave;
   const store='pa-picar-ultimo-pedido:'+conf.dataset.usuario;
-  let ultimoVisto=Number(sessionStorage.getItem(store))||0;
+  const guardado=sessionStorage.getItem(store);
+  let ultimoVisto=guardado===null?null:Number(guardado)||0;
   function convertirClave(k){
     const b=k.replace(/-/g,'+').replace(/_/g,'/');
     const s=atob(b.padEnd(Math.ceil(b.length/4)*4,'='));
@@ -24,7 +25,7 @@
       const id=Number(datos.ultimo_id)||0;
       badge.hidden=pendientes===0;
       badge.textContent=pendientes>99?'99+':String(pendientes);
-      if(ultimoVisto && id>ultimoVisto) {
+      if(ultimoVisto!==null && id>ultimoVisto) {
         const alerta=document.createElement('div');
         alerta.className='aviso-flotante-nuevo';
         alerta.setAttribute('role','status');
@@ -35,7 +36,7 @@
         document.body.append(alerta);
         setTimeout(()=>alerta.remove(),9000);
       }
-      ultimoVisto=Math.max(ultimoVisto,id);
+      ultimoVisto=Math.max(ultimoVisto||0,id);
       sessionStorage.setItem(store,String(ultimoVisto));
       if('setAppBadge' in navigator) {
         pendientes?navigator.setAppBadge(pendientes).catch(()=>{}):

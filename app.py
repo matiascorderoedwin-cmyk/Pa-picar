@@ -541,7 +541,7 @@ def enviar_notificacion_push(suscripcion,titulo,mensaje,destino):
             data=json.dumps({'title':titulo,'body':mensaje,'url':destino}),
             vapid_private_key=privada,
             vapid_claims={'sub':'https://pa-picar.vercel.app'},
-            ttl=300,timeout=2.5
+            ttl=300,timeout=2
         )
         return True
     except Exception:
@@ -558,7 +558,7 @@ def avisar_pedido_a_empleados(pedido_id):
                     SELECT s.endpoint,s.p256dh,s.auth FROM suscripciones_push s
                     JOIN usuarios u ON u.id=s.usuario_id
                     WHERE u.activo=TRUE AND u.permiso_pedidos=TRUE AND s.origen=%s
-                    ORDER BY s.creado_en DESC LIMIT 8
+                    ORDER BY s.creado_en DESC LIMIT 5
                 """,(request.host_url.rstrip('/'),))
                 destinos=cursor.fetchall()
         for d in destinos:
