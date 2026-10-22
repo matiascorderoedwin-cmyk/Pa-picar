@@ -3,6 +3,9 @@ import logging
 import os
 import secrets
 import json
+import re
+import unicodedata
+from urllib.parse import urlsplit
 from io import BytesIO
 from functools import wraps, lru_cache
 from datetime import timedelta
@@ -13,7 +16,7 @@ from decimal import Decimal, InvalidOperation
 import psycopg
 from psycopg.rows import dict_row
 from dotenv import load_dotenv
-from flask import Flask, flash, redirect, render_template, request, url_for, session, abort, g, send_file, send_from_directory
+from flask import Flask, flash, redirect, render_template, request, url_for, session, abort, g, send_file, send_from_directory, jsonify
 from werkzeug.security import check_password_hash, generate_password_hash
 
 load_dotenv()
@@ -69,6 +72,9 @@ RUTAS_PERMISOS = {
     'anular_venta': 'ventas',
     'pedidos': 'pedidos',
     'procesar_pedido': 'pedidos',
+    'avisos_pedidos_estado': 'pedidos',
+    'suscribir_avisos_pedidos': 'pedidos',
+    'cancelar_avisos_pedidos': 'pedidos',
     'administracion': 'administracion',
     'editar_producto': 'administracion',
     'movimiento_producto': 'administracion',
@@ -499,6 +505,131 @@ def listado_ventas():
         return redirect(url_for('inicio'))
 
 
+# Avisos Web Push con permiso explícito; la clave privada está en Vercel.
+PUSH_PUBLIC_KEY = os.getenv('PUSH_VAPID_PUBLIC_KEY', '')
+
+def suscripcion_push_valida(datos):
+    if not isinstance(datos,dict) or not isinstance(datos.get('keys'),dict):
+        raise ValueError('Suscripción inválida.')
+    endpoint=datos.get('endpoint')
+    if not isinstance(endpoint,str) or len(endpoint)>4000 or not endpoint.startswith('https://'):
+        raise ValueError('Endpoint inválido.')
+    partes=urlsplit(endpoint)
+    host=(partes.hostname or '').lower()
+    if not (host.endswith('.push.apple.com') or host=='fcm.googleapis.com'
+            or host=='updates.push.services.mozilla.com'
+            or host.endswith('.notify.windows.com')):
+        raise ValueError('Proveedor de avisos no autorizado.')
+    if partes.username or partes.password or partes.port or partes.fragment:
+        raise ValueError('Endpoint inválido.')
+    claves=datos['keys']
+    for clave in ('p256dh','auth'):
+        valor=claves.get(clave)
+        if not isinstance(valor,str) or not re.fullmatch(r'[A-Za-z0-9_-]{15,250}',valor):
+            raise ValueError('Claves de avisos inválidas.')
+    return {'endpoint':endpoint,'keys':{'p256dh':claves['p256dh'],'auth':claves['auth']}}
+
+def enviar_notificacion_push(suscripcion,titulo,mensaje,destino):
+    privada=os.getenv('PUSH_VAPID_PRIVATE_KEY','')
+    if not privada:
+        return False
+    try:
+        from pywebpush import webpush
+        webpush(
+            subscription_info=suscripcion,
+            data=json.dumps({'title':titulo,'body':mensaje,'url':destino}),
+            vapid_private_key=privada,
+            vapid_claims={'sub':'https://pa-picar.vercel.app'},
+            ttl=300,timeout=2.5
+        )
+        return True
+    except Exception:
+        app.logger.warning('No se pudo entregar un aviso push al dispositivo')
+        return False
+
+def avisar_pedido_a_empleados(pedido_id):
+    if not os.getenv('PUSH_VAPID_PRIVATE_KEY'):
+        return
+    try:
+        with conectar() as conexion:
+            with conexion.cursor(row_factory=dict_row) as cursor:
+                cursor.execute("""
+                    SELECT s.endpoint,s.p256dh,s.auth FROM suscripciones_push s
+                    JOIN usuarios u ON u.id=s.usuario_id
+                    WHERE u.activo=TRUE AND u.permiso_pedidos=TRUE AND s.origen=%s
+                    ORDER BY s.creado_en DESC LIMIT 8
+                """,(request.host_url.rstrip('/'),))
+                destinos=cursor.fetchall()
+        for d in destinos:
+            enviar_notificacion_push(
+                {'endpoint':d['endpoint'],
+                 'keys':{'p256dh':d['p256dh'],'auth':d['auth']}},
+                'Nuevo pedido · Pa Picar',
+                f'Pedido #{pedido_id} pendiente de revisión',
+                '/pedidos?estado=Pendiente'
+            )
+    except psycopg.Error:
+        app.logger.exception('No se pudieron consultar suscripciones push')
+
+@app.get('/pedidos/avisos/estado')
+def avisos_pedidos_estado():
+    try:
+        with conectar() as conexion:
+            with conexion.cursor(row_factory=dict_row) as cursor:
+                cursor.execute("""
+                    SELECT COUNT(*) AS pendientes, COALESCE(MAX(id),0) AS ultimo_id
+                    FROM pedidos WHERE estado='Pendiente'
+                """)
+                actual=cursor.fetchone()
+        respuesta=jsonify({'pendientes':actual['pendientes'],'ultimo_id':actual['ultimo_id']})
+        respuesta.headers['Cache-Control']='no-store'
+        return respuesta
+    except psycopg.Error:
+        app.logger.exception('Error consultando avisos')
+        abort(503)
+
+@app.post('/pedidos/avisos/suscribir')
+def suscribir_avisos_pedidos():
+    validar_csrf()
+    try:
+        datos=(request.get_json(silent=True) or {}).get('subscription')
+        sub=suscripcion_push_valida(datos)
+    except ValueError:
+        abort(400)
+    try:
+        with conectar() as conexion:
+            with conexion.cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO suscripciones_push(usuario_id,endpoint,p256dh,auth,origen)
+                    VALUES (%s,%s,%s,%s,%s)
+                    ON CONFLICT(endpoint) DO UPDATE SET
+                        usuario_id=EXCLUDED.usuario_id,p256dh=EXCLUDED.p256dh,
+                        auth=EXCLUDED.auth,origen=EXCLUDED.origen,creado_en=now()
+                """,(g.usuario['id'],sub['endpoint'],sub['keys']['p256dh'],
+                     sub['keys']['auth'],request.host_url.rstrip('/')))
+        return jsonify({'ok':True})
+    except psycopg.Error:
+        app.logger.exception('Error registrando avisos')
+        abort(503)
+
+@app.post('/pedidos/avisos/desactivar')
+def cancelar_avisos_pedidos():
+    validar_csrf()
+    endpoint=(request.get_json(silent=True) or {}).get('endpoint')
+    if not isinstance(endpoint,str) or len(endpoint)>4000:
+        abort(400)
+    try:
+        with conectar() as conexion:
+            with conexion.cursor() as cursor:
+                cursor.execute(
+                    'DELETE FROM suscripciones_push WHERE usuario_id=%s AND endpoint=%s',
+                    (g.usuario['id'],endpoint)
+                )
+        return jsonify({'ok':True})
+    except psycopg.Error:
+        app.logger.exception('Error desactivando avisos')
+        abort(503)
+
 @app.get('/pedidos')
 def pedidos():
     """Panel de pedidos separado del inventario, con filtros por estado."""
@@ -532,7 +663,7 @@ def pedidos():
                     LIMIT 100
                 """, (estado, estado))
                 lista = cursor.fetchall()
-        return render_template('pedidos.html',pedidos=lista,conteos=conteos,estado=estado,estados=estados)
+        return render_template('pedidos.html',pedidos=lista,conteos=conteos,estado=estado,estados=estados,push_public_key=PUSH_PUBLIC_KEY)
     except psycopg.Error:
         app.logger.exception('Error consultando pedidos')
         flash('No fue posible consultar los pedidos.', 'error')
@@ -734,7 +865,7 @@ def pedidos_publicos():
             with conexion.cursor(row_factory=dict_row) as cursor:
                 cursor.execute('SELECT id,nombre,precio,cantidad FROM productos WHERE activo=TRUE AND cantidad>0 ORDER BY nombre,id')
                 productos=cursor.fetchall()
-        return render_template('pedir.html',productos=productos)
+        return render_template('pedir.html',productos=productos,push_public_key=PUSH_PUBLIC_KEY)
     except psycopg.Error:
         app.logger.exception('Error mostrando catálogo público')
         abort(503)
@@ -754,8 +885,7 @@ def enviar_pedido():
         comentarios=request.form.get('comentarios','').strip()
         tipo_entrega=request.form.get('tipo_entrega','')
         direccion_entrega=request.form.get('direccion_entrega','').strip()
-        fecha_texto=request.form.get('fecha_entrega','').strip()
-        hora_texto=request.form.get('hora_entrega','').strip()
+        fecha_texto=request.form.get('fecha_hora_entrega','').strip()
         if len(comentarios)>500:
             raise ValueError('El comentario no debe exceder 500 caracteres.')
         if tipo_entrega not in ('recoger','delivery'):
@@ -765,10 +895,14 @@ def enviar_pedido():
                 raise ValueError('Indica una dirección de entrega de 10 a 300 caracteres.')
         else:
             direccion_entrega=None
-        if not fecha_texto or not hora_texto:
-            raise ValueError('Selecciona fecha y hora para recibir el pedido.')
+        if not fecha_texto:
+            raise ValueError('Selecciona la fecha y hora para recibir el pedido.')
+        try:
+            fecha_seleccionada=datetime.strptime(fecha_texto,'%Y-%m-%dT%H:%M')
+        except ValueError:
+            raise ValueError('Fecha y hora inválidas.') from None
         zona_rd=ZoneInfo('America/Santo_Domingo')
-        fecha_entrega=datetime.strptime(fecha_texto+' '+hora_texto,'%Y-%m-%d %H:%M').replace(tzinfo=zona_rd)
+        fecha_entrega=fecha_seleccionada.replace(tzinfo=zona_rd)
         ahora_rd=datetime.now(zona_rd)
         if fecha_entrega < ahora_rd-timedelta(minutes=2):
             raise ValueError('La fecha y hora solicitadas no pueden estar en el pasado (hora de República Dominicana).')
@@ -779,15 +913,28 @@ def enviar_pedido():
         if not isinstance(items,list) or not 1<=len(items)<=30:
             raise ValueError('Selecciona productos para el pedido.')
         cantidades={}
+        variantes={}
         for item in items:
             if not isinstance(item,dict) or type(item.get('id')) is not int or type(item.get('cantidad')) is not int:
                 raise ValueError('Productos inválidos.')
             pid,cant=item['id'],item['cantidad']
+            relleno=item.get('relleno','')
+            if not isinstance(relleno,str) or relleno not in ('','pizza','atun','pollo'):
+                raise ValueError('Relleno inválido.')
             if pid<1 or not 1<=cant<=100:
                 raise ValueError('Cantidad inválida.')
             cantidades[pid]=cantidades.get(pid,0)+cant
+            clave=(pid,relleno)
+            variantes[clave]=variantes.get(clave,0)+cant
         if any(q>100 for q in cantidades.values()):
             raise ValueError('Cantidad excesiva.')
+        cliente_push=None
+        try:
+            datos_push=request.form.get('push_subscription','')
+            if datos_push and len(datos_push)<=5000:
+                cliente_push=suscripcion_push_valida(json.loads(datos_push))
+        except (ValueError,TypeError,KeyError,json.JSONDecodeError):
+            cliente_push=None
         with conectar() as conexion:
             with conexion.cursor(row_factory=dict_row) as cursor:
                 cursor.execute('SELECT id,nombre,precio,cantidad,activo FROM productos WHERE id=ANY(%s) ORDER BY id', (list(cantidades),))
@@ -796,13 +943,31 @@ def enviar_pedido():
                     raise ValueError('Un producto ya no está disponible.')
                 total=Decimal('0')
                 detalles=[]
+                por_id={p['id']:p for p in productos}
                 for producto in productos:
                     q=cantidades[producto['id']]
                     if not producto['activo'] or producto['cantidad']<q:
                         raise ValueError('No hay suficientes unidades de '+producto['nombre'])
+                for (pid,relleno),q in variantes.items():
+                    producto=por_id[pid]
+                    nombre_norm=''.join(
+                        c for c in unicodedata.normalize('NFD',producto['nombre'].casefold())
+                        if unicodedata.category(c)!='Mn'
+                    )
+                    es_tartico='tartic' in nombre_norm
+                    if es_tartico and relleno not in ('pizza','atun','pollo'):
+                        raise ValueError('Elige relleno Pizza, Atún o Pollo para los tarticos.')
+                    if not es_tartico and relleno:
+                        raise ValueError('Solo se puede elegir relleno para los tarticos.')
+                    nombre_detalle=producto['nombre']
+                    if relleno:
+                        bonito={'pizza':'Pizza','atun':'Atún','pollo':'Pollo'}[relleno]
+                        nombre_detalle+=f' (relleno: {bonito})'
+                    if len(nombre_detalle)>120:
+                        raise ValueError('El nombre del producto es demasiado largo.')
                     subtotal=producto['precio']*q
                     total+=subtotal
-                    detalles.append((producto,q,subtotal))
+                    detalles.append((producto,q,subtotal,relleno or None,nombre_detalle))
                 total+=costo_delivery
                 cursor.execute('''
                     INSERT INTO pedidos(
@@ -813,8 +978,21 @@ def enviar_pedido():
                 ''', (nombre,telefono,comentarios or None,tipo_entrega,direccion_entrega,
                       fecha_entrega,costo_delivery,total,total,'Pendiente'))
                 pedido_id=cursor.fetchone()['id']
-                for producto,q,subtotal in detalles:
-                    cursor.execute('INSERT INTO pedido_detalles(pedido_id,producto_id,nombre_producto,cantidad,precio_unitario,subtotal) VALUES (%s,%s,%s,%s,%s,%s)',(pedido_id,producto['id'],producto['nombre'],q,producto['precio'],subtotal))
+                for producto,q,subtotal,relleno,nombre_detalle in detalles:
+                    cursor.execute('''
+                        INSERT INTO pedido_detalles(
+                          pedido_id,producto_id,nombre_producto,cantidad,
+                          precio_unitario,subtotal,relleno
+                        ) VALUES (%s,%s,%s,%s,%s,%s,%s)
+                    ''',(pedido_id,producto['id'],nombre_detalle,q,producto['precio'],subtotal,relleno))
+        session['ultimo_pedido_confirmado']=pedido_id
+        if cliente_push:
+            enviar_notificacion_push(
+                cliente_push,'¡Pedido recibido! · Pa Picar',
+                f'Recibimos tu pedido #{pedido_id}. Lo confirmaremos por WhatsApp.',
+                f'/pedido-recibido/{pedido_id}'
+            )
+        avisar_pedido_a_empleados(pedido_id)
         return redirect(url_for('pedido_recibido',pedido_id=pedido_id))
     except (ValueError,TypeError,json.JSONDecodeError) as exc:
         flash(str(exc),'error')
@@ -827,7 +1005,8 @@ def enviar_pedido():
 @app.get('/pedido-recibido/<int:pedido_id>')
 def pedido_recibido(pedido_id):
     # No mostrar datos personales ni detalles de pedidos por ID público.
-    return render_template('pedido_recibido.html')
+    visible=session.get('ultimo_pedido_confirmado')==pedido_id
+    return render_template('pedido_recibido.html',numero_pedido=pedido_id if visible else None)
 
 
 @app.post('/administracion/pedidos/<int:pedido_id>/<accion>')
