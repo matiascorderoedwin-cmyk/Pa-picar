@@ -20,6 +20,11 @@
   .pedido-datos{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;margin:13px 0}
   .pedido-datos div{min-width:0;overflow-wrap:anywhere}
   .pedido-datos small{display:block;color:#85634e}
+  .pedido-entrega{background:#fbf3eb;border:1px solid #ecdbc9;border-radius:10px;padding:12px 14px;margin:11px 0;overflow-wrap:anywhere}
+  .pedido-entrega p{margin:5px 0;font-size:13px}
+  .pedido-entrega .etiqueta-entrega{font-weight:800}
+  .pedido-entrega .direccion,.pedido-entrega .comentarios{white-space:pre-wrap;overflow-wrap:anywhere}
+  .pedido-total-detalle{color:#835c43;font-size:13px;margin:3px 0}
   .pedido-productos{margin:10px 0;padding:11px 14px;background:#f8eee3;border-radius:10px}
   .pedido-productos ul{margin:7px 0 0;padding-left:18px}
   .pedido-total{font-size:18px;font-weight:800;margin:10px 0}
@@ -61,15 +66,37 @@
           <h2>Pedido #{{ pedido.id }}</h2>
           <span class="etiqueta-estado {{ pedido.estado }}">{{ pedido.estado }}</span>
         </div>
-        <p class="pedido-fecha">{{ pedido.creado_en.strftime('%d/%m/%Y %I:%M %p') }}</p>
+        <p class="pedido-fecha">Realizado el {{ pedido.creado_en_local.strftime('%d/%m/%Y a las %I:%M %p') }} (hora de R.D.)</p>
         <div class="pedido-datos">
           <div><small>Cliente</small><strong>{{ pedido.cliente_nombre }}</strong></div>
           <div><small>Teléfono</small><strong>{{ pedido.cliente_telefono }}</strong></div>
         </div>
+        <div class="pedido-entrega">
+          <p class="etiqueta-entrega">
+            {% if pedido.tipo_entrega == 'delivery' %}🛵 Delivery a domicilio
+            {% elif pedido.tipo_entrega == 'recoger' %}🛍️ Pasar a recoger
+            {% else %}Pedido anterior (sin modalidad registrada){% endif %}
+          </p>
+          {% if pedido.fecha_entrega_local %}
+            <p><strong>Fecha y hora solicitadas:</strong> {{ pedido.fecha_entrega_local.strftime('%d/%m/%Y a las %I:%M %p') }} (R.D.)</p>
+          {% else %}
+            <p>Fecha de entrega no registrada (pedido anterior).</p>
+          {% endif %}
+          {% if pedido.tipo_entrega == 'delivery' and pedido.direccion_entrega %}
+            <p><strong>Dirección:</strong> <span class="direccion">{{ pedido.direccion_entrega }}</span></p>
+          {% endif %}
+          {% if pedido.nota %}
+            <p><strong>Comentarios:</strong> <span class="comentarios">{{ pedido.nota }}</span></p>
+          {% endif %}
+        </div>
         <div class="pedido-productos"><strong>Productos solicitados</strong>
           <ul>{% for d in pedido.detalles %}<li>{{ d.nombre }} × {{ d.cantidad }}</li>{% endfor %}</ul>
         </div>
-        <p class="pedido-total">Total: RD$ {{ '{:,.2f}'.format(pedido.total) }}</p>
+        {% if pedido.costo_delivery and pedido.costo_delivery > 0 %}
+          <p class="pedido-total-detalle">Productos: RD$ {{ '{:,.2f}'.format(pedido.total - pedido.costo_delivery) }}</p>
+          <p class="pedido-total-detalle">Delivery: RD$ {{ '{:,.2f}'.format(pedido.costo_delivery) }}</p>
+        {% endif %}
+        <p class="pedido-total">Total estimado: RD$ {{ '{:,.2f}'.format(pedido.total) }}</p>
         {% if pedido.estado == 'Rechazado' and pedido.motivo_rechazo %}
           <p class="motivo"><strong>Motivo del rechazo:</strong> {{ pedido.motivo_rechazo }}</p>
         {% endif %}

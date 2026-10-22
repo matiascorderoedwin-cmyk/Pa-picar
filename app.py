@@ -7,6 +7,7 @@ from io import BytesIO
 from functools import wraps, lru_cache
 from datetime import timedelta
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from decimal import Decimal, InvalidOperation
 
 import psycopg
@@ -512,7 +513,10 @@ def pedidos():
                 conteos = {fila['estado']: fila['cantidad'] for fila in cursor.fetchall()}
                 cursor.execute("""
                     SELECT p.id,p.cliente_nombre,p.cliente_telefono,p.total,p.estado,
-                           p.creado_en,p.procesado_en,p.motivo_rechazo,p.venta_id,
+                           p.creado_en,p.creado_en AT TIME ZONE 'America/Santo_Domingo' AS creado_en_local,
+                           p.procesado_en,p.motivo_rechazo,p.venta_id,
+                           p.tipo_entrega,p.fecha_entrega AT TIME ZONE 'America/Santo_Domingo' AS fecha_entrega_local,
+                           p.direccion_entrega,p.costo_delivery,p.nota,
                            COALESCE(
                              json_agg(json_build_object('nombre',d.nombre_producto,
                                                        'cantidad',d.cantidad,
@@ -675,6 +679,9 @@ def anular_venta(venta_id):
                             raise ValueError('No se pueden devolver unidades: falta un producto original.')
                     for d in detalles:
                         if d['producto_id'] is None:
+                            # No se devuelve inventario por el servicio de delivery.
+                            if d['nombre_producto'] == 'Servicio de delivery':
+                                continue
                             raise ValueError('No se pueden devolver unidades: falta un producto original.')
                         cursor.execute('UPDATE productos SET cantidad=cantidad+%s WHERE id=%s', (d['cantidad'],d['producto_id']))
                         cursor.execute('INSERT INTO movimientos_inventario (producto_id,tipo,cantidad,nota) VALUES (%s,%s,%s,%s)', (d['producto_id'],'Devolución anulación',d['cantidad'],f'Factura #{venta_id}: {motivo}'[:250]))
@@ -744,6 +751,30 @@ def enviar_pedido():
         flash('Revisa tu nombre y teléfono.', 'error')
         return redirect(url_for('pedidos_publicos'))
     try:
+        comentarios=request.form.get('comentarios','').strip()
+        tipo_entrega=request.form.get('tipo_entrega','')
+        direccion_entrega=request.form.get('direccion_entrega','').strip()
+        fecha_texto=request.form.get('fecha_entrega','').strip()
+        hora_texto=request.form.get('hora_entrega','').strip()
+        if len(comentarios)>500:
+            raise ValueError('El comentario no debe exceder 500 caracteres.')
+        if tipo_entrega not in ('recoger','delivery'):
+            raise ValueError('Selecciona recoger en el local o delivery.')
+        if tipo_entrega == 'delivery':
+            if not 10<=len(direccion_entrega)<=300:
+                raise ValueError('Indica una dirección de entrega de 10 a 300 caracteres.')
+        else:
+            direccion_entrega=None
+        if not fecha_texto or not hora_texto:
+            raise ValueError('Selecciona fecha y hora para recibir el pedido.')
+        zona_rd=ZoneInfo('America/Santo_Domingo')
+        fecha_entrega=datetime.strptime(fecha_texto+' '+hora_texto,'%Y-%m-%d %H:%M').replace(tzinfo=zona_rd)
+        ahora_rd=datetime.now(zona_rd)
+        if fecha_entrega < ahora_rd-timedelta(minutes=2):
+            raise ValueError('La fecha y hora solicitadas no pueden estar en el pasado (hora de República Dominicana).')
+        if fecha_entrega > ahora_rd+timedelta(days=60):
+            raise ValueError('Solo puedes programar pedidos dentro de los próximos 60 días.')
+        costo_delivery=Decimal('100.00') if tipo_entrega=='delivery' else Decimal('0.00')
         items=json.loads(request.form.get('items','[]'))
         if not isinstance(items,list) or not 1<=len(items)<=30:
             raise ValueError('Selecciona productos para el pedido.')
@@ -772,7 +803,15 @@ def enviar_pedido():
                     subtotal=producto['precio']*q
                     total+=subtotal
                     detalles.append((producto,q,subtotal))
-                cursor.execute('INSERT INTO pedidos(cliente_nombre,cliente_telefono,total,total_estimado,estado) VALUES (%s,%s,%s,%s,%s) RETURNING id', (nombre,telefono,total,total,'Pendiente'))
+                total+=costo_delivery
+                cursor.execute('''
+                    INSERT INTO pedidos(
+                        cliente_nombre,cliente_telefono,nota,
+                        tipo_entrega,direccion_entrega,fecha_entrega,costo_delivery,
+                        total,total_estimado,estado
+                    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id
+                ''', (nombre,telefono,comentarios or None,tipo_entrega,direccion_entrega,
+                      fecha_entrega,costo_delivery,total,total,'Pendiente'))
                 pedido_id=cursor.fetchone()['id']
                 for producto,q,subtotal in detalles:
                     cursor.execute('INSERT INTO pedido_detalles(pedido_id,producto_id,nombre_producto,cantidad,precio_unitario,subtotal) VALUES (%s,%s,%s,%s,%s,%s)',(pedido_id,producto['id'],producto['nombre'],q,producto['precio'],subtotal))
@@ -799,7 +838,7 @@ def procesar_pedido(pedido_id, accion):
     try:
         with conectar() as conexion:
             with conexion.cursor(row_factory=dict_row) as cursor:
-                cursor.execute('SELECT id,estado FROM pedidos WHERE id=%s FOR UPDATE', (pedido_id,))
+                cursor.execute('SELECT id,estado,costo_delivery FROM pedidos WHERE id=%s FOR UPDATE', (pedido_id,))
                 pedido=cursor.fetchone()
                 if pedido is None:
                     abort(404)
@@ -842,12 +881,22 @@ def procesar_pedido(pedido_id, accion):
                         metodo=request.form.get('metodo_pago','')
                         if metodo not in ('Efectivo','Transferencia'):
                             raise ValueError('Selecciona un método de pago válido.')
-                        total=sum((d['precio_unitario']*d['cantidad'] for d in detalles),Decimal('0'))
+                        costo_delivery=pedido['costo_delivery'] or Decimal('0')
+                        total=sum((d['precio_unitario']*d['cantidad'] for d in detalles),Decimal('0')) + costo_delivery
                         cursor.execute('INSERT INTO ventas(metodo_pago,total) VALUES (%s,%s) RETURNING id',(metodo,total))
                         venta_id=cursor.fetchone()['id']
                         for d in detalles:
                             subtotal=d['precio_unitario']*d['cantidad']
                             cursor.execute('INSERT INTO venta_detalles(venta_id,producto_id,nombre_producto,cantidad,precio_unitario,subtotal) VALUES (%s,%s,%s,%s,%s,%s)',(venta_id,d['producto_id'],d['nombre_producto'],d['cantidad'],d['precio_unitario'],subtotal))
+                        if costo_delivery > 0:
+                            # Línea de servicio para que la factura y los reportes
+                            # incluyan delivery, sin modificar inventario de productos.
+                            cursor.execute('''
+                                INSERT INTO venta_detalles(
+                                    venta_id,producto_id,nombre_producto,cantidad,
+                                    precio_unitario,subtotal
+                                ) VALUES (%s,NULL,%s,1,%s,%s)
+                            ''',(venta_id,'Servicio de delivery',costo_delivery,costo_delivery))
                         # El inventario ya fue descontado al aceptar el pedido.
                         cursor.execute("UPDATE pedidos SET estado='Pagado',venta_id=%s,procesado_en=now() WHERE id=%s",(venta_id,pedido_id))
                         mensaje='Pago confirmado. Venta #'+str(venta_id)+' registrada.'
