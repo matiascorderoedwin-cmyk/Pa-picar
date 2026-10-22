@@ -17,7 +17,9 @@
     .subtitulo, .ayuda { color: #835c43; font-size: 12px; }
     .card { background: #fffaf5; border: 1px solid #e5cbb7; border-radius: 14px; padding: 14px; margin-bottom: 11px; }
     label { display: block; font-size: 13px; font-weight: 650; margin: 9px 0 5px; }
-    input { width: 100%; min-width: 0; border: 1px solid #d8b99e; background: white; color: #63391f; padding: 10px 11px; border-radius: 9px; font: inherit; }
+    input, select, textarea { width: 100%; min-width: 0; border: 1px solid #d8b99e; background: white; color: #63391f; padding: 10px 11px; border-radius: 9px; font: inherit; font-size: 16px; }
+    .numero { width: 65px; padding: 6px; }
+    .desglose { display: flex; justify-content: space-between; margin-top: 8px; }
     input:focus-visible, button:focus-visible { outline: 3px solid #e7a66d; outline-offset: 2px; }
     button { border: 0; border-radius: 9px; background: #77401d; color: #fffaf4; font: inherit; font-weight: 700; cursor: pointer; }
     button:disabled { opacity: .65; cursor: wait; }
@@ -99,7 +101,9 @@
         <div id="carrito">
           <p class="vacio">Todavía no has seleccionado productos.</p>
         </div>
-        <div class="total"><span>Total estimado</span><span id="total">RD$ 0.00</span></div>
+        <div class="desglose"><span>Productos</span><span id="subtotal-productos">RD$ 0.00</span></div>
+        <div class="desglose"><span>Delivery</span><span id="costo-delivery">RD$ 0.00</span></div>
+        <div class="total" aria-live="polite"><span>Total estimado</span><span id="total">RD$ 0.00</span></div>
       </section>
       <section class="card" aria-labelledby="titulo-cliente">
         <h2 id="titulo-cliente">Tus datos</h2>
@@ -107,6 +111,22 @@
         <input id="nombre" name="nombre" required minlength="2" maxlength="100" autocomplete="name">
         <label for="telefono">Teléfono de contacto</label>
         <input id="telefono" name="telefono" type="tel" required minlength="7" maxlength="30" autocomplete="tel">
+        <label for="modalidad">¿Cómo recibirás tu pedido?</label>
+        <select id="modalidad" name="modalidad" required>
+          <option value="recoger">Pasar a recoger — sin recargo</option>
+          <option value="delivery">Delivery — RD$ 100 adicionales</option>
+        </select>
+        <div id="direccion-campo" hidden>
+          <label for="direccion-entrega">Dirección de entrega</label>
+          <textarea id="direccion-entrega" name="direccion_entrega" minlength="5" maxlength="300" autocomplete="street-address" rows="2"></textarea>
+        </div>
+        <label for="fecha-entrega">Fecha para recibir o recoger</label>
+        <input id="fecha-entrega" name="fecha_entrega" type="date" required min="{{ ahora.strftime('%Y-%m-%d') }}" value="{{ ahora.strftime('%Y-%m-%d') }}">
+        <label for="hora-entrega">Hora para recibir o recoger</label>
+        <input id="hora-entrega" name="hora_entrega" type="time" required value="{{ ahora.strftime('%H:%M') }}">
+        <p class="ayuda">Hora de República Dominicana (America/Santo_Domingo). Hora actual: <span id="hora-actual"></span>. Confirmaremos la disponibilidad del horario.</p>
+        <label for="nota">Comentarios (opcional)</label>
+        <textarea id="nota" name="nota" maxlength="500" rows="3" placeholder="Indícanos cualquier detalle de tu pedido"></textarea>
         <p class="ayuda">El pedido no genera un cobro ni reserva inventario. Confirmaremos disponibilidad y pago.</p>
         <button id="enviar" type="submit" class="enviar">Enviar pedido</button>
       </section>
@@ -119,11 +139,34 @@
       const lista = document.getElementById('carrito');
       const form = document.getElementById('form-pedido');
       const busqueda = document.getElementById('busqueda');
+      const modalidad = document.getElementById('modalidad');
+      const fecha = document.getElementById('fecha-entrega');
+      const hora = document.getElementById('hora-entrega');
+      const relojInicio = performance.now();
+      const servidorInicio = {{ (ahora.timestamp() * 1000)|int }};
+      const reloj = new Intl.DateTimeFormat('en-CA', {timeZone: 'America/Santo_Domingo', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'});
+      function actualizarReloj() {
+        const partes = Object.fromEntries(reloj.formatToParts(new Date(servidorInicio + performance.now() - relojInicio)).map(p => [p.type, p.value]));
+        const hoy = `${partes.year}-${partes.month}-${partes.day}`;
+        const actual = `${partes.hour}:${partes.minute}`;
+        fecha.min = hoy;
+        hora.min = fecha.value === hoy ? actual : '';
+        document.getElementById('hora-actual').textContent = actual;
+      }
+      actualizarReloj();
+      setInterval(actualizarReloj, 15000);
+      fecha.addEventListener('change', actualizarReloj);
+      modalidad.addEventListener('change', () => {
+        const delivery = modalidad.value === 'delivery';
+        document.getElementById('direccion-campo').hidden = !delivery;
+        document.getElementById('direccion-entrega').required = delivery;
+        document.getElementById('direccion-entrega').disabled = !delivery;
+        pintarCarrito();
+      });
       const moneda = valor => 'RD$ ' + valor.toLocaleString('es-DO', {minimumFractionDigits: 2, maximumFractionDigits: 2});
 
       function pintarCarrito() {
         lista.replaceChildren();
-        let total = 0;
         if (!carrito.size) {
           const mensaje = document.createElement('p');
           mensaje.className = 'vacio';
@@ -131,7 +174,6 @@
           lista.append(mensaje);
         }
         for (const item of carrito.values()) {
-          total += item.cantidad * item.precio;
           const fila = document.createElement('div');
           fila.className = 'linea-carrito';
           const detalle = document.createElement('div');
@@ -163,16 +205,41 @@
             if (cambio > 0 && item.cantidad >= item.max) boton.disabled = true;
             controles.append(boton);
             if (cambio < 0) {
-              const cuenta = document.createElement('span');
+              const cuenta = document.createElement('input');
+              cuenta.type = 'number';
+              cuenta.inputMode = 'numeric';
+              cuenta.min = '1';
+              cuenta.max = String(item.max);
+              cuenta.step = '1';
+              cuenta.required = true;
+              cuenta.setAttribute('aria-label', 'Cantidad de ' + item.nombre);
               cuenta.className = 'numero';
-              cuenta.textContent = String(item.cantidad);
+              cuenta.value = String(item.cantidad);
+              cuenta.addEventListener('input', () => {
+                if (!cuenta.validity.valid) return;
+                item.cantidad = Number(cuenta.value);
+                subtotal.textContent = moneda(item.precio * item.cantidad);
+                actualizarTotal();
+              });
+              cuenta.addEventListener('change', () => {
+                if (cuenta.validity.valid) pintarCarrito();
+                else cuenta.reportValidity();
+              });
               controles.append(cuenta);
             }
           }
           fila.append(detalle, controles);
           lista.append(fila);
         }
-        document.getElementById('total').textContent = moneda(total);
+        actualizarTotal();
+      }
+
+      function actualizarTotal() {
+        const subtotal = [...carrito.values()].reduce((s, i) => s + i.precio * i.cantidad, 0);
+        const recargo = modalidad.value === 'delivery' ? 100 : 0;
+        document.getElementById('subtotal-productos').textContent = moneda(subtotal);
+        document.getElementById('costo-delivery').textContent = moneda(recargo);
+        document.getElementById('total').textContent = moneda(subtotal + recargo);
       }
 
       for (const producto of productos) {
@@ -223,6 +290,11 @@
       });
 
       form.addEventListener('submit', evento => {
+        actualizarReloj();
+        if (!form.reportValidity()) {
+          evento.preventDefault();
+          return;
+        }
         if (carrito.size === 0) {
           evento.preventDefault();
           alert('Agrega al menos un producto antes de enviar el pedido.');

@@ -8,6 +8,7 @@ from functools import wraps, lru_cache
 from datetime import timedelta
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
+from pedidos_entrega import ahora_local, validar_entrega, formato_hora_rd
 
 import psycopg
 from psycopg.rows import dict_row
@@ -18,6 +19,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 load_dotenv()
 
 app = Flask(__name__)
+app.jinja_env.filters['hora_rd'] = formato_hora_rd
 # A stable secret is required for sessions on serverless deployments.
 if os.getenv("VERCEL") and not os.getenv("SECRET_KEY"):
     raise RuntimeError("SECRET_KEY must be configured in Vercel environment variables")
@@ -30,6 +32,9 @@ if os.getenv('COOKIE_SECURE', 'false').lower() == 'true':
 
 def conectar():
     """Open PostgreSQL connection, including Supabase's transaction pooler."""
+    # Preview must explicitly opt into an isolated database, never inherit production.
+    if os.getenv('VERCEL_ENV') == 'preview' and os.getenv('PREVIEW_DATABASE_ISOLATED') != 'true':
+        raise psycopg.OperationalError('Preview requiere una base de datos aislada.')
     host = os.getenv("DATABASE_HOST", "127.0.0.1")
     settings = dict(
         dbname=os.getenv("DATABASE_NAME", "base_de_pa-picar"),
@@ -513,6 +518,7 @@ def pedidos():
                 cursor.execute("""
                     SELECT p.id,p.cliente_nombre,p.cliente_telefono,p.total,p.estado,
                            p.creado_en,p.procesado_en,p.motivo_rechazo,p.venta_id,
+                           p.nota,p.modalidad,p.entrega_en,p.direccion_entrega,p.costo_delivery,
                            COALESCE(
                              json_agg(json_build_object('nombre',d.nombre_producto,
                                                        'cantidad',d.cantidad,
@@ -727,7 +733,7 @@ def pedidos_publicos():
             with conexion.cursor(row_factory=dict_row) as cursor:
                 cursor.execute('SELECT id,nombre,precio,cantidad FROM productos WHERE activo=TRUE AND cantidad>0 ORDER BY nombre,id')
                 productos=cursor.fetchall()
-        return render_template('pedir.html',productos=productos)
+        return render_template('pedir.html',productos=productos,ahora=ahora_local())
     except psycopg.Error:
         app.logger.exception('Error mostrando catálogo público')
         abort(503)
@@ -744,6 +750,7 @@ def enviar_pedido():
         flash('Revisa tu nombre y teléfono.', 'error')
         return redirect(url_for('pedidos_publicos'))
     try:
+        modalidad, nota, direccion, entrega, costo_delivery = validar_entrega(request.form)
         items=json.loads(request.form.get('items','[]'))
         if not isinstance(items,list) or not 1<=len(items)<=30:
             raise ValueError('Selecciona productos para el pedido.')
@@ -772,7 +779,11 @@ def enviar_pedido():
                     subtotal=producto['precio']*q
                     total+=subtotal
                     detalles.append((producto,q,subtotal))
-                cursor.execute('INSERT INTO pedidos(cliente_nombre,cliente_telefono,total,total_estimado,estado) VALUES (%s,%s,%s,%s,%s) RETURNING id', (nombre,telefono,total,total,'Pendiente'))
+                total += costo_delivery
+                cursor.execute('''INSERT INTO pedidos(cliente_nombre,cliente_telefono,total,total_estimado,estado,
+                                  nota,modalidad,entrega_en,direccion_entrega,costo_delivery)
+                                  VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id''',
+                               (nombre,telefono,total,total,'Pendiente',nota,modalidad,entrega,direccion,costo_delivery))
                 pedido_id=cursor.fetchone()['id']
                 for producto,q,subtotal in detalles:
                     cursor.execute('INSERT INTO pedido_detalles(pedido_id,producto_id,nombre_producto,cantidad,precio_unitario,subtotal) VALUES (%s,%s,%s,%s,%s,%s)',(pedido_id,producto['id'],producto['nombre'],q,producto['precio'],subtotal))
@@ -799,7 +810,7 @@ def procesar_pedido(pedido_id, accion):
     try:
         with conectar() as conexion:
             with conexion.cursor(row_factory=dict_row) as cursor:
-                cursor.execute('SELECT id,estado FROM pedidos WHERE id=%s FOR UPDATE', (pedido_id,))
+                cursor.execute('SELECT id,estado,costo_delivery FROM pedidos WHERE id=%s FOR UPDATE', (pedido_id,))
                 pedido=cursor.fetchone()
                 if pedido is None:
                     abort(404)
@@ -843,7 +854,8 @@ def procesar_pedido(pedido_id, accion):
                         if metodo not in ('Efectivo','Transferencia'):
                             raise ValueError('Selecciona un método de pago válido.')
                         total=sum((d['precio_unitario']*d['cantidad'] for d in detalles),Decimal('0'))
-                        cursor.execute('INSERT INTO ventas(metodo_pago,total) VALUES (%s,%s) RETURNING id',(metodo,total))
+                        total += pedido['costo_delivery']
+                        cursor.execute('INSERT INTO ventas(metodo_pago,total,costo_delivery) VALUES (%s,%s,%s) RETURNING id',(metodo,total,pedido['costo_delivery']))
                         venta_id=cursor.fetchone()['id']
                         for d in detalles:
                             subtotal=d['precio_unitario']*d['cantidad']
