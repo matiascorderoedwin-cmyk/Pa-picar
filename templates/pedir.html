@@ -30,7 +30,11 @@
     .producto-info { min-width: 0; }
     .nombre { font-size: 13px; font-weight: 750; overflow-wrap: anywhere; }
     .precio { font-size: 12px; color: #835c43; }
-    .agregar { padding: 7px 13px; flex-shrink: 0; }
+    .agregar { padding: 7px 13px; flex-shrink: 0; transition: background .18s ease, box-shadow .18s ease; }
+    /* Destaca cada producto que ya tiene unidades en el carrito. */
+    .producto.en-carrito { background: #eef7ef; border-left: 3px solid #268054; padding-left: 9px; }
+    .producto .agregar.seleccionado { background: #267a4f !important; color: #fff !important; box-shadow: 0 0 0 2px #d1e9d7; }
+    .producto .agregar.seleccionado:hover { background: #1b6540 !important; }
     .vacio { color: #835c43; text-align: center; padding: 14px; border: 1px dashed #e5cbb7; border-radius: 9px; }
     .linea-carrito { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid #ecdbce; }
     .linea-carrito:last-child { border-bottom: 0; }
@@ -252,6 +256,7 @@
                   item.cantidad = cantidad;
                   cuenta.setCustomValidity('');
                   actualizarTotales();
+                  actualizarEstadoProductos();
                 } else {
                   cuenta.setCustomValidity('Escribe una cantidad válida disponible.');
                 }
@@ -278,6 +283,23 @@
           lista.append(fila);
         }
         actualizarTotales();
+        actualizarEstadoProductos();
+      }
+
+      function actualizarEstadoProductos() {
+        // El mismo producto puede tener varios rellenos: se suman todos.
+        // Al quitar la última unidad desaparece el resaltado automáticamente.
+        for (const producto of productos) {
+          const cantidad = unidadesTotales(Number(producto.dataset.id));
+          const elegido = cantidad > 0;
+          const boton = producto.querySelector('.agregar');
+          producto.classList.toggle('en-carrito', elegido);
+          boton.classList.toggle('seleccionado', elegido);
+          boton.textContent = elegido ? '✓ Agregado (' + cantidad + ')' : 'Agregar';
+          boton.setAttribute('aria-label', elegido
+            ? 'Ya agregaste ' + cantidad + ' unidades de ' + producto.dataset.nombre + '. Pulsar para agregar otra.'
+            : 'Agregar ' + producto.dataset.nombre + ' al pedido');
+        }
       }
 
       function unidadesTotales(id) {
