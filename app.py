@@ -168,6 +168,7 @@ def usuario_actual():
     return {
         'usuario_actual': usuario,
         'puede_gestionar_usuarios': puede_gestionar_usuarios(usuario),
+        'push_public_key': PUSH_PUBLIC_KEY,
     }
 
 # PWA para iPhone. Los iconos cuadrados se generan a partir del
@@ -701,7 +702,12 @@ def administracion():
         return redirect(url_for('inicio'))
 
 def validar_csrf():
-    if not secrets.compare_digest(request.form.get('csrf',''),session.get('csrf','')):
+    # Los formularios clásicos usan form; los permisos de notificaciones usan JSON.
+    token=request.form.get('csrf','')
+    if request.is_json:
+        datos=request.get_json(silent=True)
+        token=datos.get('csrf','') if isinstance(datos,dict) else ''
+    if not isinstance(token,str) or not secrets.compare_digest(token,session.get('csrf','')):
         abort(400)
 
 

@@ -1,2 +1,17 @@
-<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pedido enviado · Pa Picar</title>{% include '_pwa_head.html' %}
-</head><body style="font:18px system-ui;background:#f7efe5;color:#77401d;text-align:center;padding:35px 15px"><img src="{{ url_for('static',filename='logo-pa-picar.png') }}" alt="Pa Picar" style="max-width:220px;width:75%"><h1>¡Gracias por tu pedido!</h1><p>Tu solicitud fue recibida. Nos pondremos en contacto para confirmar disponibilidad y pago.</p><a href="{{ url_for('pedidos_publicos') }}" style="color:#77401d">Hacer otro pedido</a></body></html>
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pedido recibido · Pa Picar</title>
+{% include '_pwa_head.html' %}
+<style>*{box-sizing:border-box}body{background:#f7efe5;color:#63391f;font:16px/1.55 system-ui,Arial,sans-serif;margin:0;padding:30px 14px}
+.caja{max-width:500px;margin:30px auto;background:#fffaf5;border:1px solid #e5cbb7;border-radius:20px;text-align:center;padding:24px}
+.logo{width:185px;max-width:70%}h1{color:#77401d;font-size:24px;margin:9px 0}.numero{background:#ede1d4;border-radius:10px;padding:12px;margin:15px 0;font-size:19px;font-weight:800}
+p{margin:13px 0}.mensaje{font-size:13px;color:#805d48}.enlace{display:inline-block;margin-top:14px;background:#77401d;color:white;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:750}
+</style></head>
+<body><main class="caja">
+<img class="logo" src="{{ url_for('static',filename='logo-pa-picar.png') }}" alt="Pa Picar">
+<h1>✓ ¡Pedido recibido!</h1>
+{% if numero_pedido %}<div class="numero">Número de pedido #{{ numero_pedido }}</div>{% endif %}
+<p>Recibimos tu solicitud correctamente. La revisaremos y te contactaremos por <strong>WhatsApp</strong> para confirmar disponibilidad, fecha y pago.</p>
+<p class="mensaje">El pedido todavía no ha sido aceptado ni cobrado.</p>
+<a class="enlace" href="{{ url_for('pedidos_publicos') }}">Hacer otro pedido</a>
+</main></body></html>

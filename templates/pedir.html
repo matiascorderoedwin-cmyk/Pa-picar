@@ -405,7 +405,7 @@
       // Aviso voluntario: iPhone exige abrir como app de pantalla de inicio.
       const botonAviso=document.getElementById('activar-aviso-cliente');
       const estadoAviso=document.getElementById('estado-aviso-cliente');
-      const clavePublica="BASKIzh-3FRniMBGb2nzh7LqhuCHjYS_YTAbqJUGmUkn_jUKZmAPHO38kcSOYW8Hpbc8k2_7l_sX4T-OJ6pJL_Y";
+      const clavePublica={{ push_public_key|tojson }};
       function convertirClave(clave) {
         const base64=clave.replace(/-/g,'+').replace(/_/g,'/');
         const bytes=atob(base64.padEnd(Math.ceil(base64.length/4)*4,'='));

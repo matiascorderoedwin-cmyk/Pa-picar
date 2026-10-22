@@ -22,3 +22,12 @@ button,.boton,input[type=submit]{background:var(--marron)!important;color:white!
 .salir-flotante button{width:auto!important;min-width:72px;padding:9px 17px!important;border-radius:999px!important;background:#77401d!important;color:#fffaf4!important;border:1px solid #e6d2bf!important;box-shadow:0 5px 18px #4d2b1933;font-size:13px;line-height:1.2;font-weight:650;cursor:pointer;margin:0!important}
 @media(max-width:720px){.salir-flotante{right:12px;bottom:12px}}
 @media print{.salir-flotante{display:none!important}}
+
+/* Aviso de número de pedidos en la navegación del personal. */
+.nav-principal .aviso-pendientes-nav{display:inline-block;min-width:21px;padding:2px 6px;
+  border-radius:999px;background:#b4462b;color:white;font-size:11px;font-weight:800;text-align:center}
+.aviso-pendientes-nav[hidden]{display:none!important}
+.aviso-flotante-nuevo{position:fixed;z-index:150;right:16px;bottom:80px;max-width:360px;
+  padding:13px 17px;background:#77401d;color:white;border-radius:12px;box-shadow:0 5px 24px #4d2b1970;
+  font-weight:750}
+.aviso-flotante-nuevo a{color:white;text-decoration:underline}
