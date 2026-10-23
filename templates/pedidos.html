@@ -61,6 +61,18 @@
   {% with mensajes=get_flashed_messages(with_categories=true) %}
     {% for categoria,mensaje in mensajes %}<div class="alerta {{ categoria }}" role="alert">{{ mensaje }}</div>{% endfor %}
   {% endwith %}
+  {# Configuración de notificaciones limitada a Pedidos, sin ejecutar nada en Administración. #}
+  <div id="config-avisos-admin" hidden
+       data-estado="{{ url_for('avisos_pedidos_estado') }}"
+       data-suscribir="{{ url_for('suscribir_avisos_pedidos') }}"
+       data-desactivar="{{ url_for('cancelar_avisos_pedidos') }}"
+       data-token="{{ csrf_token() }}"
+       data-clave="{{ push_public_key }}"
+       data-usuario="{{ usuario_actual.id }}"></div>
+  <div style="display:none" aria-hidden="true">
+    <span id="aviso-pendientes-nav" hidden></span>
+  </div>
+  <script src="{{ url_for('static',filename='pwa/avisos-admin.js') }}" defer></script>
   <section class="config-notificaciones" aria-label="Avisos de nuevos pedidos">
     <div>
       <h2>🔔 Avisos de pedidos nuevos</h2>

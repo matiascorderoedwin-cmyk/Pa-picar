@@ -9,9 +9,7 @@
     <a href="{{ url_for('listado_ventas') }}" class="{{ 'activo' if request.endpoint in ('listado_ventas','facturar','recibo','crear_venta') else '' }}">Ventas</a>
   {% endif %}
   {% if usuario_actual and usuario_actual.permiso_pedidos %}
-    <a href="{{ url_for('pedidos') }}" class="{{ 'activo' if request.endpoint in ('pedidos','procesar_pedido') else '' }}">
-      Pedidos <span id="aviso-pendientes-nav" class="aviso-pendientes-nav" hidden></span>
-    </a>
+    <a href="{{ url_for('pedidos') }}" class="{{ 'activo' if request.endpoint in ('pedidos','procesar_pedido') else '' }}">Pedidos</a>
   {% endif %}
   {% if usuario_actual and usuario_actual.rol == 'administrador' and usuario_actual.permiso_administracion %}
     <a href="{{ url_for('administracion') }}" class="{{ 'activo' if request.endpoint in ('administracion','usuarios_admin') else '' }}">Administración</a>
@@ -20,13 +18,3 @@
     <a href="{{ url_for('reportes') }}" class="{{ 'activo' if request.endpoint == 'reportes' else '' }}">Reportes</a>
   {% endif %}
 </nav>
-{% if usuario_actual and usuario_actual.permiso_pedidos %}
-  <div id="config-avisos-admin"
-       data-estado="{{ url_for('avisos_pedidos_estado') }}"
-       data-suscribir="{{ url_for('suscribir_avisos_pedidos') }}"
-       data-desactivar="{{ url_for('cancelar_avisos_pedidos') }}"
-       data-token="{{ csrf_token() }}"
-       data-clave="{{ push_public_key }}"
-       data-usuario="{{ usuario_actual.id }}" hidden></div>
-  <script src="{{ url_for('static',filename='pwa/avisos-admin.js') }}" defer></script>
-{% endif %>

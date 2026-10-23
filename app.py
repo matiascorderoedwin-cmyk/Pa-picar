@@ -168,7 +168,6 @@ def usuario_actual():
     return {
         'usuario_actual': usuario,
         'puede_gestionar_usuarios': puede_gestionar_usuarios(usuario),
-        'push_public_key': PUSH_PUBLIC_KEY,
     }
 
 # PWA para iPhone. Los iconos cuadrados se generan a partir del
