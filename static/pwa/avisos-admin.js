@@ -49,22 +49,68 @@
   if(!activar||!desactivar||!estado)return;
   const compatible='Notification' in window && 'serviceWorker' in navigator &&
                    'PushManager' in window && Boolean(clave);
+  const esIphone=/iPad|iPhone|iPod/i.test(navigator.userAgent);
+  const appInstalada=window.navigator.standalone===true ||
+                     window.matchMedia('(display-mode: standalone)').matches;
+  const mensajeInstalacion='En iPhone, abre Pa Picar desde el ícono de la pantalla de inicio para activar notificaciones. Si estás en Safari, usa Compartir → Agregar a Inicio.';
+  async function registrarEnPaPicar(sub){
+    const resp=await fetch(conf.dataset.suscribir,{
+      method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({csrf:conf.dataset.token,subscription:sub.toJSON()})
+    });
+    if(!resp.ok)throw new Error('No se pudo confirmar el registro del dispositivo.');
+  }
   async function sincronizar(){
-    if(!compatible) {
-      estado.textContent='Las alertas del sistema requieren una app PWA compatible.';
+    if(esIphone && !appInstalada){
+      estado.textContent=mensajeInstalacion;
+      activar.hidden=true;
+      desactivar.hidden=true;
       return;
     }
-    try{
-      const reg=await navigator.serviceWorker.ready;
-      const sub=await reg.pushManager.getSubscription();
-      desactivar.hidden=!(sub&&Notification.permission==='granted');
-      activar.hidden=Boolean(sub&&Notification.permission==='granted');
-    }catch(err){activar.hidden=false;desactivar.hidden=true;}
-  }
-  if(compatible) {
+    if(!compatible){
+      estado.textContent='Este navegador no permite notificaciones web aquí. En un iPhone compatible, usa la aplicación instalada desde Safari.';
+      activar.hidden=true;
+      desactivar.hidden=true;
+      return;
+    }
+    if(Notification.permission==='denied'){
+      estado.textContent='Las notificaciones están bloqueadas para esta aplicación. Revísalas en Ajustes de tu iPhone.';
+      activar.hidden=true;
+      desactivar.hidden=true;
+      return;
+    }
     activar.hidden=false;
-    sincronizar();
+    activar.textContent='Activar notificaciones';
+    desactivar.hidden=true;
+    if(Notification.permission!=='granted'){
+      estado.textContent='Avisos no activados. Pulsa Activar notificaciones y acepta el permiso.';
+      return;
+    }
+    // Si el navegador ya tenía permiso, comprobar y registrar la suscripción
+    // que pudo haber quedado solo en el iPhone por un fallo anterior de guardado.
+    try {
+      const registro=await navigator.serviceWorker.register('/sw.js',{scope:'/'});
+      const sub=await registro.pushManager.getSubscription();
+      if(sub) {
+        activar.textContent='Confirmar registro de notificaciones';
+        estado.textContent='Permiso concedido. Comprobando el registro de Pa Picar…';
+        try {
+          await registrarEnPaPicar(sub);
+          activar.hidden=true;
+          desactivar.hidden=false;
+          estado.textContent='Notificaciones activadas para esta cuenta en este dispositivo.';
+        } catch(err) {
+          estado.textContent='El permiso está concedido, pero falta registrar tu iPhone. Pulsa Confirmar registro.';
+        }
+      } else {
+        estado.textContent='El iPhone tiene permiso, pero aún no está suscrito. Pulsa Activar notificaciones.';
+      }
+    }catch(err) {
+      estado.textContent='No se pudo preparar el dispositivo. Abre Pa Picar desde la pantalla de inicio e inténtalo de nuevo.';
+    }
   }
+  sincronizar();
   activar.addEventListener('click',async()=>{
     // Solicitar permiso justo desde el toque del usuario.
     const permisoPendiente=Notification.requestPermission();
@@ -72,17 +118,13 @@
     try{
       const permiso=await permisoPendiente;
       if(permiso!=='granted'){estado.textContent='Permiso denegado. Seguirás viendo el contador de pedidos.';return;}
-      const reg=await navigator.serviceWorker.ready;
+      const reg=await navigator.serviceWorker.register('/sw.js',{scope:'/'});
       let sub=await reg.pushManager.getSubscription();
       if(!sub)sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:convertirClave(clave)});
-      const resp=await fetch(conf.dataset.suscribir,{
-        method:'POST',credentials:'same-origin',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({csrf:conf.dataset.token,subscription:sub.toJSON()})
-      });
-      if(!resp.ok)throw new Error('No se pudo guardar la suscripción');
+      await registrarEnPaPicar(sub);
+      activar.hidden=true;
+      desactivar.hidden=false;
       estado.textContent='Notificaciones activadas para esta cuenta en este dispositivo.';
-      await sincronizar();
     }catch(err){estado.textContent='No se pudieron activar los avisos. Puedes seguir usando el panel.';}
     finally{activar.disabled=false;}
   });
@@ -100,7 +142,9 @@
         await sub.unsubscribe();
       }
       estado.textContent='Avisos del dispositivo desactivados.';
-      await sincronizar();
+      activar.hidden=false;
+      desactivar.hidden=true;
+      estado.textContent='Avisos del dispositivo desactivados.';
     }catch(err){estado.textContent='No se pudo desactivar el aviso. Inténtalo de nuevo.';}
   });
 })();

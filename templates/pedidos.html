@@ -80,7 +80,7 @@
     </div>
     <button type="button" id="activar-alertas" hidden>Activar notificaciones</button>
     <button type="button" id="desactivar-alertas" class="btn-desactivar" hidden>Desactivar avisos</button>
-    <p id="estado-alertas" aria-live="polite" role="status"></p>
+    <p id="estado-alertas" aria-live="polite" role="status">Estado: aún no se ha confirmado el registro de notificaciones en este dispositivo.</p>
   </section>
   <nav class="estados" aria-label="Filtrar pedidos por estado">
     <a href="{{ url_for('pedidos',estado='Todos') }}" class="{{ 'activo' if estado=='Todos' else '' }}">Todos <small>{{ conteos.values()|sum }}</small></a>
