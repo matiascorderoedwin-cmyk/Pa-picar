@@ -43,6 +43,11 @@
     .cantidad-btn { width: 30px; height: 30px; font-size: 18px; line-height: 1; }
     .numero { min-width: 18px; text-align: center; font-weight: 750; }
     .total { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding-top: 10px; font-size: 17px; font-weight: 800; }
+    /* Datos de contacto dentro de la misma tarjeta del resumen del pedido. */
+    .datos-contacto { border-top: 1px solid #e5cbb7; margin-top: 18px; padding-top: 16px; }
+    .datos-contacto h2 { margin: 0 0 10px; }
+    .datos-contacto label { margin-top: 10px; }
+    .datos-contacto input { display: block; width: 100%; }
     .enviar { width: 100%; padding: 12px; margin-top: 12px; font-size: 14px; }
     .error { background: #ffe6df; color: #852d1b; border-radius: 9px; padding: 10px; margin-bottom: 10px; }
     .regla-minimo { background: #fff0de; border: 1px solid #e7c4a0; color: #70421f;
@@ -145,13 +150,13 @@
         <div class="linea-precio"><span>Subtotal de productos</span><strong id="subtotal">RD$ 0.00</strong></div>
         <div id="fila-delivery" class="linea-precio" hidden><span>Servicio de delivery</span><strong>RD$ 100.00</strong></div>
         <div class="total"><span>Total estimado</span><span id="total">RD$ 0.00</span></div>
-      </section>
-      <section class="card" aria-labelledby="titulo-cliente">
-        <h2 id="titulo-cliente">Tus datos</h2>
-        <label for="nombre">Nombre</label>
-        <input id="nombre" name="nombre" required minlength="2" maxlength="100" autocomplete="name">
-        <label for="telefono">WhatsApp de contacto</label>
-        <input id="telefono" name="telefono" type="tel" required minlength="7" maxlength="30" autocomplete="tel">
+        <div class="datos-contacto" aria-labelledby="titulo-cliente">
+          <h2 id="titulo-cliente">Tus datos</h2>
+          <label for="nombre">Nombre</label>
+          <input id="nombre" name="nombre" required minlength="2" maxlength="100" autocomplete="name">
+          <label for="telefono">WhatsApp de contacto</label>
+          <input id="telefono" name="telefono" type="tel" required minlength="7" maxlength="30" autocomplete="tel">
+        </div>
       </section>
 
       <section class="card" aria-labelledby="titulo-entrega">
