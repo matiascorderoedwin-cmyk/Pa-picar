@@ -45,6 +45,10 @@
     .total { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding-top: 10px; font-size: 17px; font-weight: 800; }
     .enviar { width: 100%; padding: 12px; margin-top: 12px; font-size: 14px; }
     .error { background: #ffe6df; color: #852d1b; border-radius: 9px; padding: 10px; margin-bottom: 10px; }
+    .regla-minimo { background: #fff0de; border: 1px solid #e7c4a0; color: #70421f;
+      border-radius: 10px; padding: 10px 12px; font-size: 12px; margin: 8px 0 11px; }
+    .aviso-minimo { background: #fff0df; border: 1px solid #dfb287; color: #843f1d;
+      border-radius: 9px; padding: 10px 12px; margin: 10px 0 3px; font-size: 13px; font-weight: 700; }
     .trampa { position: absolute; left: -10000px; height: 1px; width: 1px; overflow: hidden; }
     .numero-input { width: 66px; min-width: 58px; padding: 6px 3px; text-align: center; font-size: 15px; font-weight: 750; }
     .linea-precio { display: flex; align-items: baseline; justify-content: space-between; gap: 9px; padding-top: 8px; color: #805c45; font-size: 13px; }
@@ -96,6 +100,7 @@
 
     <section class="card" aria-labelledby="titulo-productos">
       <h2 id="titulo-productos">Productos</h2>
+      <p class="regla-minimo"><strong>Pedido mínimo: 5 unidades por producto.</strong> Si agregas 2, 3 o 4, tendrás que completar 5 para poder enviar el pedido. En los tarticos puedes combinar rellenos del mismo producto.</p>
       <!-- Buscador fuera del formulario: Enter nunca envía un pedido. -->
       <div class="buscador" role="search">
         <input id="busqueda" type="search" placeholder="Buscar quipes, pastelitos…" aria-label="Buscar producto" autocomplete="off">
@@ -137,6 +142,7 @@
         <div id="carrito">
           <p class="vacio">Todavía no has seleccionado productos.</p>
         </div>
+        <p id="aviso-minimo" class="aviso-minimo" role="status" aria-live="polite" hidden></p>
         <div class="linea-precio"><span>Subtotal de productos</span><strong id="subtotal">RD$ 0.00</strong></div>
         <div id="fila-delivery" class="linea-precio" hidden><span>Servicio de delivery</span><strong>RD$ 100.00</strong></div>
         <div class="total"><span>Total estimado</span><span id="total">RD$ 0.00</span></div>
@@ -193,7 +199,9 @@
     (() => {
       const productos = [...document.querySelectorAll('.producto')];
       const carrito = new Map();
+      const MINIMO_PRODUCTO = 5;
       const lista = document.getElementById('carrito');
+      const avisoMinimo = document.getElementById('aviso-minimo');
       const form = document.getElementById('form-pedido');
       const busqueda = document.getElementById('busqueda');
       const moneda = valor => 'RD$ ' + valor.toLocaleString('es-DO', {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -257,6 +265,7 @@
                   cuenta.setCustomValidity('');
                   actualizarTotales();
                   actualizarEstadoProductos();
+                  actualizarAvisosMinimo();
                 } else {
                   cuenta.setCustomValidity('Escribe una cantidad válida disponible.');
                 }
@@ -284,6 +293,7 @@
         }
         actualizarTotales();
         actualizarEstadoProductos();
+        actualizarAvisosMinimo();
       }
 
       function actualizarEstadoProductos() {
@@ -306,6 +316,34 @@
         return [...carrito.values()]
           .filter(item => item.id === id)
           .reduce((cantidad, item) => cantidad + item.cantidad, 0);
+      }
+
+      function productosBajoMinimo() {
+        // El mismo producto puede incluir diferentes rellenos. El mínimo de 5
+        // se cumple sumando las unidades de todos sus rellenos.
+        const pendientes = [];
+        const revisados = new Set();
+        for (const item of carrito.values()) {
+          if (revisados.has(item.id)) continue;
+          revisados.add(item.id);
+          const unidades = unidadesTotales(item.id);
+          if (unidades < MINIMO_PRODUCTO) {
+            pendientes.push({ nombre: item.nombre, unidades, faltan: MINIMO_PRODUCTO - unidades });
+          }
+        }
+        return pendientes;
+      }
+
+      function mensajeMinimo(pendientes) {
+        return 'El mínimo es de 5 unidades por producto. ' + pendientes
+          .map(p => p.nombre + ': llevas ' + p.unidades + ', te faltan ' + p.faltan + '.')
+          .join(' ');
+      }
+
+      function actualizarAvisosMinimo() {
+        const pendientes = productosBajoMinimo();
+        avisoMinimo.hidden = pendientes.length === 0;
+        avisoMinimo.textContent = pendientes.length ? mensajeMinimo(pendientes) : '';
       }
 
       function actualizarTotales() {
@@ -484,6 +522,15 @@
         if (carrito.size === 0) {
           evento.preventDefault();
           alert('Agrega al menos un producto antes de enviar el pedido.');
+          return;
+        }
+        const productosIncompletos = productosBajoMinimo();
+        if (productosIncompletos.length) {
+          evento.preventDefault();
+          const mensaje = mensajeMinimo(productosIncompletos);
+          actualizarAvisosMinimo();
+          avisoMinimo.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          alert(mensaje);
           return;
         }
         document.getElementById('items').value = JSON.stringify(

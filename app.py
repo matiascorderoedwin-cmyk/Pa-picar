@@ -980,7 +980,7 @@ def pedidos_publicos():
     try:
         with conectar() as conexion:
             with conexion.cursor(row_factory=dict_row) as cursor:
-                cursor.execute('SELECT id,nombre,precio,cantidad FROM productos WHERE activo=TRUE AND eliminado=FALSE AND cantidad>0 ORDER BY nombre,id')
+                cursor.execute('SELECT id,nombre,precio,cantidad FROM productos WHERE activo=TRUE AND eliminado=FALSE AND cantidad>=5 ORDER BY nombre,id')
                 productos=cursor.fetchall()
         return render_template('pedir.html',productos=productos,push_public_key=PUSH_PUBLIC_KEY)
     except psycopg.Error:
@@ -1063,6 +1063,11 @@ def enviar_pedido():
                 por_id={p['id']:p for p in productos}
                 for producto in productos:
                     q=cantidades[producto['id']]
+                    if q < 5:
+                        raise ValueError(
+                            f'El mínimo es de 5 unidades por producto. '
+                            f'Agrega al menos 5 unidades de {producto["nombre"]}; llevas {q}.'
+                        )
                     if not producto['activo'] or producto['eliminado'] or producto['cantidad']<q:
                         raise ValueError('No hay suficientes unidades de '+producto['nombre'])
                 for (pid,relleno),q in variantes.items():
