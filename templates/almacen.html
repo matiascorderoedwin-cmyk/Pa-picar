@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Almacén · Pa Picar</title>
+<link rel="stylesheet" href="{{ url_for('static',filename='estilos.css') }}">
+<link rel="stylesheet" href="{{ url_for('static',filename='pa-picar-marca.css') }}">
+<style>
+.almacen-titulo{margin-bottom:16px}
+.almacen-titulo .sobretitulo{font-size:12px;letter-spacing:.12em;font-weight:800}
+.almacen-titulo h1{font-size:29px;margin:4px 0 7px}
+.almacen-titulo p{max-width:780px;color:#805c45;font-size:14px;line-height:1.5}
+.almacen-resumen{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:14px 0 19px}
+.almacen-metrica{border:1px solid #e6d2bf;border-radius:14px;background:#fffaf4;padding:15px}
+.almacen-metrica small{font-size:12px;color:#85634e;display:block}
+.almacen-metrica strong{font-size:29px;color:#77401d;display:block;margin-top:4px}
+.almacen-panel{border:1px solid #e6d2bf;border-radius:16px;background:#fffaf4;padding:18px;margin-bottom:18px}
+.almacen-panel h2{font-size:19px;margin:0 0 8px}
+.almacen-panel > p{font-size:13px;color:#805c45;line-height:1.5}
+.almacen-crear{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.almacen-campo{display:grid;gap:5px;min-width:0}
+.almacen-campo label{font-size:12px;font-weight:750;color:#63391f}
+.almacen-campo input,.almacen-campo textarea{width:100%;min-height:42px;font-size:14px}
+.almacen-campo textarea{min-height:75px;resize:vertical}
+.almacen-ancho{grid-column:1/-1}
+.almacen-crear .almacen-boton{grid-column:1/-1;background:#267a4f!important;margin-top:4px;min-height:44px}
+.almacen-top-lista{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin:0 0 15px}
+.almacen-top-lista h2{font-size:20px;margin:0}
+.almacen-busqueda{width:min(100%,310px);font-size:14px}
+.almacen-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,270px),1fr));gap:12px;align-items:start}
+.almacen-card{background:#fffaf4;border:1px solid #e6d2bf;border-radius:15px;padding:15px;min-width:0}
+.almacen-card h3{font-size:16px;margin:0 0 5px;overflow-wrap:anywhere}
+.almacen-card .nombre-id{font-size:11px;color:#85634e;font-weight:500}
+.almacen-card .cantidad{font-size:13px;color:#805c45;margin:10px 0}
+.almacen-card .cantidad strong{font-size:24px;color:#77401d}
+.almacen-card .ubicacion{font-size:12px;color:#85634e;margin:4px 0;overflow-wrap:anywhere}
+.almacen-card .nota{font-size:12px;color:#805c45;margin:5px 0 13px;white-space:pre-wrap;overflow-wrap:anywhere}
+.almacen-card .agotado{display:inline-block;margin-left:7px;border-radius:99px;background:#f9e1d9;color:#983b2d;font-size:11px;font-weight:800;padding:3px 8px}
+.almacen-desplegable{border:1px solid #e6d2bf;border-radius:10px;background:white;margin-top:8px;overflow:hidden}
+.almacen-desplegable summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;
+  gap:8px;padding:12px;font-size:13px;font-weight:800;background:#f8eee3;color:#77401d}
+.almacen-desplegable summary::-webkit-details-marker{display:none}
+.almacen-desplegable summary::after{content:'⌄';font-size:21px;line-height:10px}
+.almacen-desplegable[open] summary::after{transform:rotate(180deg)}
+.almacen-desplegable[open] summary{border-bottom:1px solid #e6d2bf}
+.almacen-desplegable .interior{padding:12px}
+.almacen-desplegable form{display:grid;gap:10px}
+.almacen-desplegable label{display:grid;gap:5px;font-weight:750;font-size:12px;color:#63391f}
+.almacen-desplegable input,.almacen-desplegable textarea{width:100%;font-size:14px}
+.almacen-desplegable button{min-height:41px;width:100%}
+.almacen-desplegable .guardar{background:#267a4f!important}
+.almacen-desplegable .eliminar{background:#a6342b!important}
+.almacen-desplegable small{font-size:11px;color:#85634e}
+.almacen-recuperar{margin-top:19px;border:1px dashed #d6b89e;border-radius:14px;padding:13px;background:#fffaf4}
+.almacen-recuperar summary{cursor:pointer;font-weight:800;color:#77401d}
+.almacen-recuperar .fila{display:flex;align-items:center;justify-content:space-between;gap:9px;flex-wrap:wrap;border-top:1px solid #e6d2bf;padding:12px 0}
+.almacen-recuperar .fila:first-of-type{margin-top:12px}
+.almacen-recuperar button{background:#267a4f!important}
+.almacen-recuperar p{font-size:12px;color:#85634e}
+.almacen-historial{overflow-x:auto}
+.almacen-historial table{min-width:580px;font-size:12px}
+.almacen-historial td{overflow-wrap:anywhere}
+.almacen-vacio{padding:24px;text-align:center;background:#fffaf4;border:1px dashed #d7bea6;border-radius:13px;color:#805c45}
+@media(max-width:590px){
+  .almacen-resumen{gap:8px}.almacen-metrica{padding:11px}
+  .almacen-metrica strong{font-size:23px}
+  .almacen-crear{grid-template-columns:1fr}
+  .almacen-panel{padding:14px}
+  .almacen-top-lista{align-items:stretch}
+  .almacen-busqueda{width:100%}
+}
+</style>
+{% include '_pwa_head.html' %}
+</head>
+<body>
+{% include '_navegacion.html' %}
+<main class="contenido principal">
+  <header class="almacen-titulo">
+    <p class="sobretitulo">INVENTARIO DE MATERIALES</p>
+    <h1>Almacén</h1>
+    <p>Registra cajas, envases, fundas, utensilios y otros artículos a medida que los recuerdes.
+       Este almacén es independiente de los productos que vendes y no cambia los pedidos ni las facturas.</p>
+  </header>
+  {% with mensajes=get_flashed_messages(with_categories=true) %}
+    {% for categoria,mensaje in mensajes %}
+      <div class="alerta {{ categoria }}" role="alert">{{ mensaje }}</div>
+    {% endfor %}
+  {% endwith %}
+
+  <section class="almacen-resumen" aria-label="Resumen del almacén">
+    <div class="almacen-metrica"><small>Artículos registrados</small><strong>{{ articulos|length }}</strong></div>
+    <div class="almacen-metrica"><small>Con existencias</small><strong>{{ con_existencia }}</strong></div>
+    <div class="almacen-metrica"><small>Agotados</small><strong>{{ agotados }}</strong></div>
+  </section>
+
+  <section class="almacen-panel">
+    <h2>Agregar artículo al almacén</h2>
+    <p>Agrega un artículo ahora y sigue completando tu inventario cuando tengas tiempo. Puedes iniciar con cantidad 0.</p>
+    <form class="almacen-crear" method="post" action="{{ url_for('crear_articulo_almacen') }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <div class="almacen-campo">
+        <label for="nombre-articulo">Nombre del artículo *</label>
+        <input id="nombre-articulo" name="nombre" required minlength="2" maxlength="120"
+               placeholder="Ej.: Cajas de cartón" autocomplete="off">
+      </div>
+      <div class="almacen-campo">
+        <label for="cantidad-articulo">Cantidad actual *</label>
+        <input id="cantidad-articulo" name="cantidad" type="number" inputmode="numeric"
+               step="1" min="0" max="100000000" value="0" required>
+      </div>
+      <div class="almacen-campo">
+        <label for="unidad-articulo">Unidad de medida *</label>
+        <input id="unidad-articulo" name="unidad" maxlength="30" value="unidades"
+               placeholder="Ej.: cajas, paquetes, pares" required>
+      </div>
+      <div class="almacen-campo">
+        <label for="ubicacion-articulo">Ubicación (opcional)</label>
+        <input id="ubicacion-articulo" name="ubicacion" maxlength="100" placeholder="Ej.: Estante 2">
+      </div>
+      <div class="almacen-campo almacen-ancho">
+        <label for="nota-articulo">Nota (opcional)</label>
+        <textarea id="nota-articulo" name="nota" rows="2" maxlength="300"
+                  placeholder="Ej.: Cajas pequeñas para pedidos"></textarea>
+      </div>
+      <button class="almacen-boton" type="submit">+ Agregar al almacén</button>
+    </form>
+  </section>
+
+  <section aria-labelledby="titulo-articulos">
+    <header class="almacen-top-lista">
+      <h2 id="titulo-articulos">Mis artículos ({{ articulos|length }})</h2>
+      <input id="buscar-almacen" class="almacen-busqueda" type="search" autocomplete="off"
+             placeholder="Buscar en el almacén…" aria-label="Buscar artículos del almacén">
+    </header>
+    <div class="almacen-grid" id="lista-almacen">
+      {% for p in articulos %}
+      <article class="almacen-card" data-buscar="{{ (p.nombre ~ ' ' ~ p.ubicacion ~ ' ' ~ p.nota)|lower }}">
+        <h3>{{ p.nombre }} <span class="nombre-id">#{{ p.id }}</span></h3>
+        <p class="cantidad">Existencias: <strong>{{ p.cantidad }}</strong> {{ p.unidad }}{% if p.cantidad == 0 %}<span class="agotado">Agotado</span>{% endif %}</p>
+        {% if p.ubicacion %}<p class="ubicacion"><strong>Ubicación:</strong> {{ p.ubicacion }}</p>{% endif %}
+        {% if p.nota %}<p class="nota">{{ p.nota }}</p>{% endif %}
+
+        <details class="almacen-desplegable" name="opciones-almacen-{{ p.id }}">
+          <summary>Ajustar cantidad</summary>
+          <div class="interior">
+            <form method="post" action="{{ url_for('ajustar_articulo_almacen',articulo_id=p.id) }}">
+              <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+              <label>Cantidad total real
+                <input name="cantidad" type="number" inputmode="numeric" step="1"
+                       min="0" max="100000000" value="{{ p.cantidad }}" required>
+              </label>
+              <label>Motivo (opcional)
+                <input name="motivo" maxlength="160" placeholder="Ej.: Conteo físico, salida, reposición">
+              </label>
+              <small>Introduce el total que tienes ahora, no la diferencia. Puedes poner 0.</small>
+              <button type="submit" class="guardar">Guardar existencias</button>
+            </form>
+          </div>
+        </details>
+
+        <details class="almacen-desplegable" name="opciones-almacen-{{ p.id }}">
+          <summary>Editar artículo</summary>
+          <div class="interior">
+            <form method="post" action="{{ url_for('editar_articulo_almacen',articulo_id=p.id) }}">
+              <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+              <label>Nombre
+                <input name="nombre" maxlength="120" minlength="2" value="{{ p.nombre }}" required>
+              </label>
+              <label>Unidad
+                <input name="unidad" maxlength="30" value="{{ p.unidad }}" required>
+              </label>
+              <label>Ubicación
+                <input name="ubicacion" maxlength="100" value="{{ p.ubicacion }}">
+              </label>
+              <label>Notas
+                <textarea name="nota" rows="2" maxlength="300">{{ p.nota }}</textarea>
+              </label>
+              <button type="submit">Guardar cambios</button>
+            </form>
+          </div>
+        </details>
+
+        <details class="almacen-desplegable" name="opciones-almacen-{{ p.id }}">
+          <summary>Retirar artículo</summary>
+          <div class="interior">
+            <p><small>Dejará de aparecer en el almacén habitual. Se conserva su historial y podrás recuperarlo.</small></p>
+            <form method="post" action="{{ url_for('retirar_articulo_almacen',articulo_id=p.id) }}"
+                  onsubmit="return confirm('¿Retirar este artículo del almacén? Podrás recuperarlo después.');">
+              <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+              <input type="hidden" name="confirmacion" value="RETIRAR">
+              <button type="submit" class="eliminar">Retirar del almacén</button>
+            </form>
+          </div>
+        </details>
+      </article>
+      {% else %}
+      <div class="almacen-vacio">Tu almacén está vacío. Agrega arriba el primer artículo cuando quieras.</div>
+      {% endfor %}
+    </div>
+    <p id="sin-resultados-almacen" class="almacen-vacio" hidden>No hay artículos que coincidan con tu búsqueda.</p>
+  </section>
+
+  <details class="almacen-recuperar">
+    <summary>Artículos retirados ({{ archivados|length }}) · Ver y recuperar</summary>
+    <p>No se pierde la información de los artículos retirados.</p>
+    {% for p in archivados %}
+      <div class="fila">
+        <span><strong>{{ p.nombre }}</strong> · {{ p.cantidad }} {{ p.unidad }}</span>
+        <form method="post" action="{{ url_for('recuperar_articulo_almacen',articulo_id=p.id) }}">
+          <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+          <button type="submit">Recuperar</button>
+        </form>
+      </div>
+    {% else %}
+      <p>No hay artículos retirados.</p>
+    {% endfor %}
+  </details>
+
+  <section class="almacen-panel" style="margin-top:19px">
+    <h2>Últimos movimientos</h2>
+    <p>Los ajustes de cantidad quedan registrados para que puedas consultar cuándo cambiaron las existencias.</p>
+    <div class="almacen-historial">
+      <table>
+        <thead><tr><th>Fecha</th><th>Artículo</th><th>Tipo</th><th>Cambio</th><th>Detalle</th></tr></thead>
+        <tbody>
+          {% for m in movimientos %}
+          <tr>
+            <td>{{ m.fecha_local.strftime('%d/%m/%Y %H:%M') }}</td>
+            <td>{{ m.nombre }}</td>
+            <td>{{ m.tipo }}</td>
+            <td>{{ '%+d'|format(m.cambio) }} {{ m.unidad }}</td>
+            <td>{{ m.detalle }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5">Todavía no hay movimientos.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</main>
+<form class="salir-flotante no-print" method="post" action="{{ url_for('logout') }}">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <button type="submit" aria-label="Cerrar sesión">Salir</button>
+</form>
+<script>
+  (() => {
+    const input=document.getElementById('buscar-almacen');
+    const tarjetas=[...document.querySelectorAll('.almacen-card')];
+    const aviso=document.getElementById('sin-resultados-almacen');
+    input.addEventListener('input',()=>{
+      const texto=input.value.trim().toLocaleLowerCase('es');
+      let encontradas=0;
+      for(const t of tarjetas){
+        const visible=t.dataset.buscar.includes(texto);
+        t.hidden=!visible;
+        if(visible)encontradas++;
+      }
+      aviso.hidden=encontradas>0 || tarjetas.length===0;
+    });
+  })();
+</script>
+</body>
+</html>
