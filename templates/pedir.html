@@ -100,7 +100,7 @@
 
     <section class="card" aria-labelledby="titulo-productos">
       <h2 id="titulo-productos">Productos</h2>
-      <p class="regla-minimo"><strong>Pedido mínimo: 5 unidades por producto.</strong> Si agregas 2, 3 o 4, tendrás que completar 5 para poder enviar el pedido. En los tarticos puedes combinar rellenos del mismo producto.</p>
+      <p class="regla-minimo"><strong>Pedido mínimo: 5 unidades por producto.</strong></p>
       <!-- Buscador fuera del formulario: Enter nunca envía un pedido. -->
       <div class="buscador" role="search">
         <input id="busqueda" type="search" placeholder="Buscar quipes, pastelitos…" aria-label="Buscar producto" autocomplete="off">
@@ -334,10 +334,8 @@
         return pendientes;
       }
 
-      function mensajeMinimo(pendientes) {
-        return 'El mínimo es de 5 unidades por producto. ' + pendientes
-          .map(p => p.nombre + ': llevas ' + p.unidades + ', te faltan ' + p.faltan + '.')
-          .join(' ');
+      function mensajeMinimo() {
+        return 'El mínimo es de 5 unidades por producto.';
       }
 
       function actualizarAvisosMinimo() {

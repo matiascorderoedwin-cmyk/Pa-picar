@@ -1064,10 +1064,7 @@ def enviar_pedido():
                 for producto in productos:
                     q=cantidades[producto['id']]
                     if q < 5:
-                        raise ValueError(
-                            f'El mínimo es de 5 unidades por producto. '
-                            f'Agrega al menos 5 unidades de {producto["nombre"]}; llevas {q}.'
-                        )
+                        raise ValueError('El mínimo es de 5 unidades por producto.')
                     if not producto['activo'] or producto['eliminado'] or producto['cantidad']<q:
                         raise ValueError('No hay suficientes unidades de '+producto['nombre'])
                 for (pid,relleno),q in variantes.items():
