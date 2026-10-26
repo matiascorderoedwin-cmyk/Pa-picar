@@ -76,6 +76,12 @@ RUTAS_PERMISOS = {
     'suscribir_avisos_pedidos': 'pedidos',
     'cancelar_avisos_pedidos': 'pedidos',
     'administracion': 'administracion',
+    'almacen': 'administracion',
+    'crear_articulo_almacen': 'administracion',
+    'editar_articulo_almacen': 'administracion',
+    'ajustar_articulo_almacen': 'administracion',
+    'retirar_articulo_almacen': 'administracion',
+    'recuperar_articulo_almacen': 'administracion',
     'editar_producto': 'administracion',
     'movimiento_producto': 'administracion',
     'ajustar_existencias_producto': 'administracion',
@@ -90,7 +96,10 @@ RUTAS_PERMISOS = {
     'clave_usuario_web': 'usuarios',
 }
 RUTAS_SOLO_ADMIN = {
-    'agregar_producto','administracion','editar_producto',
+    'agregar_producto','administracion','almacen',
+    'crear_articulo_almacen','editar_articulo_almacen',
+    'ajustar_articulo_almacen','retirar_articulo_almacen',
+    'recuperar_articulo_almacen','editar_producto',
     'movimiento_producto','ajustar_existencias_producto',
     'eliminar_producto','recuperar_producto',
     'cambiar_estado_producto','anular_venta',
@@ -673,6 +682,214 @@ def pedidos():
         app.logger.exception('Error consultando pedidos')
         flash('No fue posible consultar los pedidos.', 'error')
         return redirect(url_for('inicio'))
+
+
+# Almacén separado de los productos a la venta: cajas, utensilios y materiales.
+def datos_articulo_almacen():
+    nombre = request.form.get('nombre', '').strip()
+    unidad = request.form.get('unidad', '').strip() or 'unidades'
+    ubicacion = request.form.get('ubicacion', '').strip()
+    nota = request.form.get('nota', '').strip()
+    if not 2 <= len(nombre) <= 120:
+        raise ValueError('El nombre debe tener entre 2 y 120 caracteres.')
+    if not 1 <= len(unidad) <= 30 or len(ubicacion) > 100 or len(nota) > 300:
+        raise ValueError('Verifica la unidad (30 caracteres), ubicación (100) y notas (300).')
+    return nombre, unidad, ubicacion, nota
+
+
+def cantidad_articulo_almacen(campo='cantidad'):
+    texto = request.form.get(campo, '').strip()
+    if not re.fullmatch(r'[0-9]{1,9}', texto):
+        raise ValueError('Escribe una cantidad entera entre 0 y 100,000,000.')
+    cantidad = int(texto)
+    if cantidad > 100000000:
+        raise ValueError('La cantidad no puede superar los 100 millones.')
+    return cantidad
+
+
+@app.get('/almacen')
+@solo_admin
+def almacen():
+    try:
+        with conectar() as conexion:
+            with conexion.cursor(row_factory=dict_row) as cursor:
+                cursor.execute("""
+                    SELECT id,nombre,cantidad,unidad,ubicacion,nota
+                    FROM almacen_articulos WHERE archivado=FALSE ORDER BY nombre,id
+                """)
+                articulos=cursor.fetchall()
+                cursor.execute("""
+                    SELECT id,nombre,cantidad,unidad
+                    FROM almacen_articulos WHERE archivado=TRUE ORDER BY id DESC
+                """)
+                archivados=cursor.fetchall()
+                cursor.execute("""
+                    SELECT m.id,m.tipo,m.cambio,m.detalle,
+                           m.creado_en AT TIME ZONE 'America/Santo_Domingo' AS fecha_local,
+                           a.nombre,a.unidad
+                    FROM almacen_movimientos m
+                    JOIN almacen_articulos a ON a.id=m.articulo_id
+                    ORDER BY m.id DESC LIMIT 40
+                """)
+                movimientos=cursor.fetchall()
+        return render_template(
+            'almacen.html', articulos=articulos, archivados=archivados,
+            movimientos=movimientos, con_existencia=sum(1 for a in articulos if a['cantidad']>0),
+            agotados=sum(1 for a in articulos if a['cantidad']==0),
+        )
+    except psycopg.Error:
+        app.logger.exception('Error cargando almacén')
+        flash('No se pudo abrir el almacén. Comprueba la conexión.', 'error')
+        return redirect(url_for('administracion'))
+
+
+@app.post('/almacen/nuevo')
+@solo_admin
+def crear_articulo_almacen():
+    validar_csrf()
+    try:
+        nombre,unidad,ubicacion,nota=datos_articulo_almacen()
+        cantidad=cantidad_articulo_almacen()
+        with conectar() as conexion:
+            with conexion.cursor(row_factory=dict_row) as cursor:
+                cursor.execute("""
+                    INSERT INTO almacen_articulos(nombre,cantidad,unidad,ubicacion,nota)
+                    VALUES (%s,%s,%s,%s,%s) RETURNING id
+                """, (nombre,cantidad,unidad,ubicacion,nota))
+                articulo_id=cursor.fetchone()['id']
+                if cantidad>0:
+                    cursor.execute("""
+                        INSERT INTO almacen_movimientos(articulo_id,tipo,cambio,detalle)
+                        VALUES (%s,'Alta',%s,%s)
+                    """, (articulo_id,cantidad,'Existencia inicial registrada'))
+        flash(f'«{nombre}» agregado al almacén con {cantidad} {unidad}.', 'success')
+    except ValueError as exc:
+        flash(str(exc), 'error')
+    except psycopg.errors.UniqueViolation:
+        flash('Ya existe un artículo con ese nombre. Puedes editarlo o recuperarlo si está retirado.', 'error')
+    except psycopg.Error:
+        app.logger.exception('Error agregando almacén')
+        flash('No se pudo registrar el artículo.', 'error')
+    return redirect(url_for('almacen'))
+
+
+@app.post('/almacen/<int:articulo_id>/editar')
+@solo_admin
+def editar_articulo_almacen(articulo_id):
+    validar_csrf()
+    try:
+        nombre,unidad,ubicacion,nota=datos_articulo_almacen()
+        with conectar() as conexion:
+            with conexion.cursor() as cursor:
+                cursor.execute("""
+                    UPDATE almacen_articulos
+                    SET nombre=%s,unidad=%s,ubicacion=%s,nota=%s,actualizado_en=now()
+                    WHERE id=%s AND archivado=FALSE
+                """, (nombre,unidad,ubicacion,nota,articulo_id))
+                if cursor.rowcount!=1:
+                    raise ValueError('El artículo no está disponible para editar.')
+        flash('Artículo actualizado correctamente.', 'success')
+    except ValueError as exc:
+        flash(str(exc), 'error')
+    except psycopg.errors.UniqueViolation:
+        flash('Ya existe otro artículo con ese nombre.', 'error')
+    except psycopg.Error:
+        app.logger.exception('Error editando almacén')
+        flash('No se pudo actualizar el artículo.', 'error')
+    return redirect(url_for('almacen'))
+
+
+@app.post('/almacen/<int:articulo_id>/existencias')
+@solo_admin
+def ajustar_articulo_almacen(articulo_id):
+    validar_csrf()
+    try:
+        nueva=cantidad_articulo_almacen()
+        motivo=request.form.get('motivo','').strip()
+        if len(motivo)>160:
+            raise ValueError('El motivo admite hasta 160 caracteres.')
+        with conectar() as conexion:
+            with conexion.cursor(row_factory=dict_row) as cursor:
+                cursor.execute("""
+                    SELECT nombre,cantidad,unidad FROM almacen_articulos
+                    WHERE id=%s AND archivado=FALSE FOR UPDATE
+                """, (articulo_id,))
+                articulo=cursor.fetchone()
+                if articulo is None:
+                    raise ValueError('No se encontró el artículo activo.')
+                anterior=articulo['cantidad']
+                diferencia=nueva-anterior
+                if diferencia:
+                    cursor.execute("""
+                        UPDATE almacen_articulos SET cantidad=%s,actualizado_en=now()
+                        WHERE id=%s AND archivado=FALSE
+                    """, (nueva,articulo_id))
+                    detalle=f'Antes: {anterior}; ahora: {nueva}.'
+                    if motivo:
+                        detalle+=' '+motivo
+                    cursor.execute("""
+                        INSERT INTO almacen_movimientos(articulo_id,tipo,cambio,detalle)
+                        VALUES (%s,'Ajuste',%s,%s)
+                    """, (articulo_id,diferencia,detalle))
+        if diferencia:
+            flash(f'Existencias de «{articulo["nombre"]}» ajustadas de {anterior} a {nueva} {articulo["unidad"]}.','success')
+        else:
+            flash('La cantidad ya era la indicada. No hubo cambios.','success')
+    except ValueError as exc:
+        flash(str(exc),'error')
+    except psycopg.Error:
+        app.logger.exception('Error ajustando almacén')
+        flash('No se pudo guardar la cantidad.','error')
+    return redirect(url_for('almacen'))
+
+
+@app.post('/almacen/<int:articulo_id>/retirar')
+@solo_admin
+def retirar_articulo_almacen(articulo_id):
+    validar_csrf()
+    if request.form.get('confirmacion')!='RETIRAR':
+        abort(400)
+    try:
+        with conectar() as conexion:
+            with conexion.cursor(row_factory=dict_row) as cursor:
+                cursor.execute("""
+                    UPDATE almacen_articulos SET archivado=TRUE,actualizado_en=now()
+                    WHERE id=%s AND archivado=FALSE RETURNING nombre
+                """, (articulo_id,))
+                articulo=cursor.fetchone()
+                if not articulo:
+                    raise ValueError('El artículo ya no está disponible.')
+        flash(f'«{articulo["nombre"]}» retirado. Puedes recuperarlo más abajo.','success')
+    except ValueError as exc:
+        flash(str(exc),'error')
+    except psycopg.Error:
+        app.logger.exception('Error retirando artículo')
+        flash('No se pudo retirar el artículo.','error')
+    return redirect(url_for('almacen'))
+
+
+@app.post('/almacen/<int:articulo_id>/recuperar')
+@solo_admin
+def recuperar_articulo_almacen(articulo_id):
+    validar_csrf()
+    try:
+        with conectar() as conexion:
+            with conexion.cursor(row_factory=dict_row) as cursor:
+                cursor.execute("""
+                    UPDATE almacen_articulos SET archivado=FALSE,actualizado_en=now()
+                    WHERE id=%s AND archivado=TRUE RETURNING nombre
+                """, (articulo_id,))
+                articulo=cursor.fetchone()
+                if not articulo:
+                    raise ValueError('No se encontró el artículo retirado.')
+        flash(f'«{articulo["nombre"]}» recuperado.','success')
+    except ValueError as exc:
+        flash(str(exc),'error')
+    except psycopg.Error:
+        app.logger.exception('Error recuperando artículo')
+        flash('No se pudo recuperar el artículo.','error')
+    return redirect(url_for('almacen'))
+
 
 @app.get('/administracion')
 @solo_admin

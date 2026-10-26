@@ -13,6 +13,7 @@
   {% endif %}
   {% if usuario_actual and usuario_actual.rol == 'administrador' and usuario_actual.permiso_administracion %}
     <a href="{{ url_for('administracion') }}" class="{{ 'activo' if request.endpoint in ('administracion','usuarios_admin') else '' }}">Administración</a>
+    <a href="{{ url_for('almacen') }}" class="{{ 'activo' if request.endpoint in ('almacen','crear_articulo_almacen','editar_articulo_almacen','ajustar_articulo_almacen','retirar_articulo_almacen','recuperar_articulo_almacen') else '' }}">Almacén</a>
   {% endif %}
   {% if usuario_actual and usuario_actual.permiso_reportes and not usuario_actual.permiso_ventas %}
     <a href="{{ url_for('reportes') }}" class="{{ 'activo' if request.endpoint == 'reportes' else '' }}">Reportes</a>
