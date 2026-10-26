@@ -68,7 +68,6 @@
     .aviso-opcional { margin:12px 0 4px; background:#f9eddf; border-radius:10px; padding:11px; }
     .aviso-opcional button { padding:9px 12px; margin-top:7px; width:100%; }
     .aviso-opcional p { font-size:12px; margin:0; color:#75523c; }
-    .reloj-compacto { font-size:12px; color:#835c43; margin:6px 0 4px; }
     textarea { width: 100%; min-width: 0; border: 1px solid #d8b99e; background: white; color: #63391f; padding: 10px 11px; border-radius: 9px; font: inherit; resize: vertical; }
     .ayuda-entrega { font-size: 12px; color: #835c43; }
     .titulo-entrega { font-size: 14px; font-weight: 800; margin: 15px 0 4px; }
@@ -177,15 +176,14 @@
         </div>
 
         <div class="campo-entrega">
-          <label for="fecha_hora_entrega">Fecha y hora de entrega (República Dominicana)</label>
+          <label for="fecha_hora_entrega">Fecha y hora de entrega</label>
           <input id="fecha_hora_entrega" name="fecha_hora_entrega" type="datetime-local" step="60" required>
-          <p class="reloj-compacto">Ahora en R.D.: <strong id="reloj-rd">Calculando...</strong>. Sujeto a confirmación.</p>
         </div>
 
         <label for="comentarios">Comentarios para tu pedido (opcional)</label>
         <textarea id="comentarios" name="comentarios" rows="3" maxlength="500"
           placeholder="Ej.: Sin picante, un detalle de la entrega o cualquier indicación."></textarea>
-        <p class="ayuda">El envío no realiza un cobro ni reserva inventario. Confirmaremos disponibilidad y pago por WhatsApp.</p>
+        <p class="ayuda">Confirmaremos disponibilidad y pago por WhatsApp.</p>
         <div class="aviso-opcional">
           <p>Al enviar, verás una confirmación en pantalla. Si tienes Pa Picar instalado como app, también puedes activar un aviso en tu celular.</p>
           <button id="activar-aviso-cliente" type="button" hidden>Activar aviso de pedido recibido</button>
@@ -442,14 +440,12 @@
         const valor=tipo=>partes.find(p=>p.type===tipo)?.value||'';
         return {
           fecha:valor('year')+'-'+valor('month')+'-'+valor('day'),
-          hora:valor('hour')+':'+valor('minute'),
-          mostrar:valor('day')+'/'+valor('month')+'/'+valor('year')+' '+valor('hour')+':'+valor('minute')
+          hora:valor('hour')+':'+valor('minute')
         };
       }
       function refrescarHora() {
         const ahora=horaRD();
         const actual=ahora.fecha+'T'+ahora.hora;
-        document.getElementById('reloj-rd').textContent=ahora.mostrar;
         fechaHora.min=actual;
         const p=ahora.fecha.split('-').map(Number);
         const tope=new Date(Date.UTC(p[0],p[1]-1,p[2]+60));
