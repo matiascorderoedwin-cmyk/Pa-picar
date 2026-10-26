@@ -10,10 +10,25 @@
 @media(max-width:550px){.inventario-indicadores{grid-template-columns:1fr}.inventario-indicador{padding:15px}}
 .panel-usuarios-admin .boton-usuarios{background:#77401d;color:white!important;padding:11px 15px;border-radius:10px;font-weight:750;white-space:nowrap}
 .panel-usuarios-admin .boton-usuarios:hover{text-decoration:none;background:#995523}
+.admin-card .ajuste-existencias{background:#eef6ed;border:1px solid #c4ddc5;border-radius:12px;padding:13px;margin:15px 0 12px;display:grid;gap:8px}
+.admin-card .ajuste-existencias h4{margin:0;color:#245b33;font-size:15px}
+.admin-card .ajuste-existencias small{color:#385b39}
+.admin-card .ajuste-existencias input[type=number]{width:100%;font-size:18px;font-weight:750}
+.admin-card .ajuste-existencias button{background:#267a4f!important;color:#fff!important}
+.admin-card .eliminar-producto{margin-top:15px;padding-top:12px;border-top:1px solid #ead4c3}
+.admin-card .eliminar-producto button{background:#a6342b!important;color:#fff!important;font-weight:750;width:100%}
+.admin-card .eliminar-producto small{display:block;color:#805c45;margin-bottom:7px}
+.eliminados-panel{margin:20px 0;padding:15px;border:1px dashed #cfb19b;border-radius:14px;background:#fffaf4}
+.eliminados-panel summary{cursor:pointer;font-weight:800;color:#77401d}
+.eliminados-panel p{color:#805c45;font-size:13px}
+.eliminados-item{display:flex;justify-content:space-between;align-items:center;gap:12px;border-top:1px solid #e6d2bf;padding:12px 0;flex-wrap:wrap}
+.eliminados-item:first-of-type{margin-top:12px}
+.eliminados-item button{background:#267a4f!important;color:#fff!important}
+@media(max-width:550px){.eliminados-item form,.eliminados-item button{width:100%}}
 </style>
 <link rel="stylesheet" href="{{ url_for('static', filename='pa-picar-marca.css') }}">
 {% include '_pwa_head.html' %}
-</head><body>{% include '_navegacion.html' %}<main class="contenido principal"><h1>Administración de Pa Picar</h1><p>Actualiza precios y registra producción diaria, por lotes o ajustes de inventario.</p>{% if puede_gestionar_usuarios %}
+</head><body>{% include '_navegacion.html' %}<main class="contenido principal"><h1>Administración de Pa Picar</h1><p>Actualiza precios, registra producción y ajusta la existencia exacta de cada producto. También puedes eliminar productos del catálogo sin perder el historial de ventas.</p>{% if puede_gestionar_usuarios %}
 <section class="panel panel-usuarios-admin" style="margin:16px 0;padding:17px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
   <div><h2 style="margin:0 0 5px">Usuarios y accesos</h2>
     <p style="margin:0">Crea usuarios, limita apartados y activa o bloquea sus cuentas.</p></div>
@@ -40,7 +55,44 @@
   </article>
 </section>
 
-<div class="admin-grid">{% for p in productos %}<section class="admin-card"><h3>{{ p.nombre }} <small>#{{ p.id }}</small> {% if not p.activo %}<small style="color:#b43d28">(Inactivo)</small>{% endif %}</h3><p>Existencias: <strong>{{ p.cantidad }}</strong></p><form method="post" action="{{ url_for('editar_producto',pid=p.id) }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><label>Nombre <input name="nombre" value="{{ p.nombre }}" maxlength="100" required></label><label>Precio (RD$) <input name="precio" type="number" min="0" max="99999999.99" step="0.01" value="{{ p.precio }}" required></label><button>Guardar nombre y precio</button></form><form method="post" action="{{ url_for('movimiento_producto',pid=p.id) }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><label>Tipo de movimiento <select name="tipo"><option value="Diaria">Producción diaria (+)</option><option value="Lote">Producción por lote (+)</option><option value="Ajuste entrada">Ajuste de entrada (+)</option><option value="Ajuste salida">Ajuste de salida (-)</option><option value="Merma">Pérdida / merma (-)</option></select></label><label>Unidades <input name="cantidad" type="number" min="1" max="1000000" required></label><label>Nota (opcional) <input name="nota" maxlength="250" placeholder="Ej.: Producción del turno mañana"></label><button>Registrar movimiento</button></form><form method="post" action="{{ url_for('cambiar_estado_producto',pid=p.id) }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="activo" value="{{ 'true' if not p.activo else 'false' }}"><button type="submit" style="background:{{ '#214b32' if not p.activo else '#9b4336' }}" onclick="return confirm('¿Cambiar disponibilidad de este producto?')">{{ 'Reactivar producto' if not p.activo else 'Desactivar producto' }}</button></form></section>{% endfor %}</div><h2>Últimos movimientos</h2><div class="admin-card movimientos"><table><thead><tr><th>Fecha</th><th>Producto</th><th>Tipo</th><th>Cantidad</th><th>Nota</th></tr></thead><tbody>{% for m in movimientos %}<tr><td>{{ m.fecha.strftime('%d/%m/%Y %H:%M') }}</td><td>{{ m.nombre }}</td><td>{{ m.tipo }}</td><td>{{ '%+d'|format(m.cantidad) }}</td><td>{{ m.nota }}</td></tr>{% else %}<tr><td colspan="5">Todavía no hay movimientos.</td></tr>{% endfor %}</tbody></table></div></main><form class="salir-flotante no-print" method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button type="submit" aria-label="Cerrar sesión">Salir</button></form><style>
+<div class="admin-grid">{% for p in productos %}<section class="admin-card"><h3>{{ p.nombre }} <small>#{{ p.id }}</small> {% if not p.activo %}<small style="color:#b43d28">(Inactivo)</small>{% endif %}</h3><p>Existencias actuales: <strong>{{ p.cantidad }}</strong> unidades</p>
+<form class="ajuste-existencias" method="post" action="{{ url_for('ajustar_existencias_producto',pid=p.id) }}">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <h4>Ajustar inventario manualmente</h4>
+  <label>Nueva cantidad total
+    <input name="nueva_cantidad" type="number" inputmode="numeric" step="1" min="0" max="100000000" value="{{ p.cantidad }}" required aria-label="Nueva existencia total de {{ p.nombre }}">
+  </label>
+  <label>Motivo (opcional)
+    <input name="nota" maxlength="160" placeholder="Ej.: Conteo físico">
+  </label>
+  <small>Escribe la cantidad real (no la diferencia). Puedes colocar 0; el ajuste queda registrado.</small>
+  <button type="submit">Guardar existencias</button>
+</form>
+<form method="post" action="{{ url_for('editar_producto',pid=p.id) }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><label>Nombre <input name="nombre" value="{{ p.nombre }}" maxlength="100" required></label><label>Precio (RD$) <input name="precio" type="number" min="0" max="99999999.99" step="0.01" value="{{ p.precio }}" required></label><button>Guardar nombre y precio</button></form><form method="post" action="{{ url_for('movimiento_producto',pid=p.id) }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><label>Tipo de movimiento <select name="tipo"><option value="Diaria">Producción diaria (+)</option><option value="Lote">Producción por lote (+)</option><option value="Ajuste entrada">Ajuste de entrada (+)</option><option value="Ajuste salida">Ajuste de salida (-)</option><option value="Merma">Pérdida / merma (-)</option></select></label><label>Unidades <input name="cantidad" type="number" min="1" max="1000000" required></label><label>Nota (opcional) <input name="nota" maxlength="250" placeholder="Ej.: Producción del turno mañana"></label><button>Registrar movimiento</button></form><form method="post" action="{{ url_for('cambiar_estado_producto',pid=p.id) }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="activo" value="{{ 'true' if not p.activo else 'false' }}"><button type="submit" style="background:{{ '#214b32' if not p.activo else '#9b4336' }}" onclick="return confirm('¿Cambiar disponibilidad de este producto?')">{{ 'Reactivar producto' if not p.activo else 'Desactivar producto' }}</button></form>
+<form class="eliminar-producto" method="post" action="{{ url_for('eliminar_producto',pid=p.id) }}"
+      onsubmit="return confirm('¿Eliminar este producto del catálogo? No aparecerá para venta ni para clientes. Las facturas y movimientos anteriores se conservarán. Podrás recuperarlo desde Productos eliminados.');">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <input type="hidden" name="confirmacion" value="ELIMINAR">
+  <small>Retirar del catálogo sin borrar las ventas anteriores.</small>
+  <button type="submit">Eliminar producto</button>
+</form>
+</section>{% endfor %}</div>
+<details class="eliminados-panel">
+  <summary>Productos eliminados ({{ eliminados|length }}) · Ver y recuperar</summary>
+  <p>Los productos eliminados no aparecen en el catálogo ni en las ventas. Sus facturas, pedidos y movimientos se conservan. Al recuperarlos quedan inactivos hasta que los reactives.</p>
+  {% for p in eliminados %}
+    <div class="eliminados-item">
+      <div><strong>{{ p.nombre }}</strong> <small>#{{ p.id }} · {{ p.cantidad }} unidades conservadas</small></div>
+      <form method="post" action="{{ url_for('recuperar_producto',pid=p.id) }}">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        <button type="submit">Recuperar producto</button>
+      </form>
+    </div>
+  {% else %}
+    <p>Todavía no has eliminado ningún producto.</p>
+  {% endfor %}
+</details>
+<h2>Últimos movimientos</h2><div class="admin-card movimientos"><table><thead><tr><th>Fecha</th><th>Producto</th><th>Tipo</th><th>Cantidad</th><th>Nota</th></tr></thead><tbody>{% for m in movimientos %}<tr><td>{{ m.fecha.strftime('%d/%m/%Y %H:%M') }}</td><td>{{ m.nombre }}</td><td>{{ m.tipo }}</td><td>{{ '%+d'|format(m.cantidad) }}</td><td>{{ m.nota }}</td></tr>{% else %}<tr><td colspan="5">Todavía no hay movimientos.</td></tr>{% endfor %}</tbody></table></div></main><form class="salir-flotante no-print" method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button type="submit" aria-label="Cerrar sesión">Salir</button></form><style>
 .salir-flotante{position:fixed;right:14px;bottom:14px;z-index:99;margin:0}
 .salir-flotante button{width:auto!important;min-width:72px;padding:9px 17px!important;border-radius:999px!important;background:#77401d!important;color:#fffaf4!important;border:1px solid #e6d2bf!important;box-shadow:0 5px 18px #4d2b1933;font-size:13px;line-height:1.2;font-weight:650;cursor:pointer}
 .salir-flotante button:hover{background:#995523!important}

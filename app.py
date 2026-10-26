@@ -78,6 +78,9 @@ RUTAS_PERMISOS = {
     'administracion': 'administracion',
     'editar_producto': 'administracion',
     'movimiento_producto': 'administracion',
+    'ajustar_existencias_producto': 'administracion',
+    'eliminar_producto': 'administracion',
+    'recuperar_producto': 'administracion',
     'cambiar_estado_producto': 'administracion',
     'reportes': 'reportes',
     'usuarios_admin': 'usuarios',
@@ -88,7 +91,9 @@ RUTAS_PERMISOS = {
 }
 RUTAS_SOLO_ADMIN = {
     'agregar_producto','administracion','editar_producto',
-    'movimiento_producto','cambiar_estado_producto','anular_venta',
+    'movimiento_producto','ajustar_existencias_producto',
+    'eliminar_producto','recuperar_producto',
+    'cambiar_estado_producto','anular_venta',
     'usuarios_admin','crear_usuario_web','actualizar_usuario_web',
     'activar_usuario_web','clave_usuario_web',
 }
@@ -297,7 +302,7 @@ def inicio():
             with conexion.cursor(row_factory=dict_row) as cursor:
                 cursor.execute(
                     "SELECT id, nombre, precio, cantidad, activo "
-                    "FROM productos ORDER BY activo DESC, nombre ASC, id ASC"
+                    "FROM productos WHERE eliminado=FALSE ORDER BY activo DESC, nombre ASC, id ASC"
                 )
                 productos = cursor.fetchall()
     except psycopg.Error:
@@ -369,7 +374,7 @@ def facturar():
     try:
         with conectar() as conexion:
             with conexion.cursor(row_factory=dict_row) as cursor:
-                cursor.execute('SELECT id, nombre, precio, cantidad FROM productos WHERE activo = TRUE ORDER BY nombre, id')
+                cursor.execute('SELECT id, nombre, precio, cantidad FROM productos WHERE activo = TRUE AND eliminado=FALSE ORDER BY nombre, id')
                 productos = cursor.fetchall()
         return render_template('facturar.html', productos=productos)
     except psycopg.Error:
@@ -401,7 +406,7 @@ def crear_venta():
             raise ValueError('Selecciona el método de pago')
         with conectar() as conexion:
             with conexion.cursor(row_factory=dict_row) as cursor:
-                cursor.execute('SELECT id,nombre,precio,cantidad,activo FROM productos WHERE id = ANY(%s) ORDER BY id FOR UPDATE', (list(cantidades),))
+                cursor.execute('SELECT id,nombre,precio,cantidad,activo,eliminado FROM productos WHERE id = ANY(%s) ORDER BY id FOR UPDATE', (list(cantidades),))
                 productos = cursor.fetchall()
                 if len(productos) != len(cantidades):
                     raise ValueError('Hay productos que ya no existen')
@@ -409,7 +414,7 @@ def crear_venta():
                 detalles=[]
                 for producto in productos:
                     q=cantidades[producto['id']]
-                    if not producto['activo']:
+                    if not producto['activo'] or producto['eliminado']:
                         raise ValueError(f"El producto {producto['nombre']} está desactivado")
                     if producto['cantidad'] is None or producto['cantidad'] < q:
                         raise ValueError(f"No hay suficientes unidades de {producto['nombre']}")
@@ -676,8 +681,10 @@ def administracion():
     try:
         with conectar() as conexion:
             with conexion.cursor(row_factory=dict_row) as cursor:
-                cursor.execute('SELECT id,nombre,precio,cantidad,activo FROM productos ORDER BY activo DESC,nombre,id')
+                cursor.execute('SELECT id,nombre,precio,cantidad,activo FROM productos WHERE eliminado=FALSE ORDER BY activo DESC,nombre,id')
                 productos = cursor.fetchall()
+                cursor.execute('SELECT id,nombre,cantidad,eliminado_en FROM productos WHERE eliminado=TRUE ORDER BY eliminado_en DESC NULLS LAST,id DESC')
+                eliminados = cursor.fetchall()
                 cursor.execute('''SELECT m.id,m.fecha,m.tipo,m.cantidad,m.nota,p.nombre
                                   FROM movimientos_inventario m JOIN productos p ON p.id=m.producto_id
                                   ORDER BY m.id DESC LIMIT 50''')
@@ -690,6 +697,7 @@ def administracion():
         return render_template(
             'administracion.html',
             productos=productos,
+            eliminados=eliminados,
             movimientos=movimientos,
             total_unidades=total_unidades,
             cantidad_productos_activos=len(productos_activos),
@@ -725,7 +733,7 @@ def editar_producto(pid):
                 if cursor.fetchone():
                     flash('Otro producto ya tiene ese nombre.','error')
                     return redirect(url_for('administracion'))
-                cursor.execute('UPDATE productos SET nombre=%s,precio=%s WHERE id=%s',(nombre,precio,pid))
+                cursor.execute('UPDATE productos SET nombre=%s,precio=%s WHERE id=%s AND eliminado=FALSE',(nombre,precio,pid))
                 if cursor.rowcount!=1: raise ValueError()
         flash('Producto actualizado correctamente.','success')
     except (ValueError,InvalidOperation):
@@ -749,11 +757,11 @@ def movimiento_producto(pid):
         cambio=-cantidad if tipo in ('Ajuste salida','Merma') else cantidad
         with conectar() as conexion:
             with conexion.cursor(row_factory=dict_row) as cursor:
-                cursor.execute('SELECT cantidad FROM productos WHERE id=%s FOR UPDATE',(pid,))
+                cursor.execute('SELECT cantidad FROM productos WHERE id=%s AND eliminado=FALSE FOR UPDATE',(pid,))
                 producto=cursor.fetchone()
                 if not producto or producto['cantidad'] is None or producto['cantidad']+cambio<0:
                     raise ValueError('Existencias insuficientes o producto inexistente.')
-                cursor.execute('UPDATE productos SET cantidad=cantidad+%s WHERE id=%s',(cambio,pid))
+                cursor.execute('UPDATE productos SET cantidad=cantidad+%s WHERE id=%s AND eliminado=FALSE',(cambio,pid))
                 cursor.execute('INSERT INTO movimientos_inventario (producto_id,tipo,cantidad,nota) VALUES (%s,%s,%s,%s)',(pid,tipo,cambio,nota))
         flash('Movimiento de inventario guardado.','success')
     except (ValueError,TypeError) as exc:
@@ -763,6 +771,110 @@ def movimiento_producto(pid):
         flash('No se pudo guardar el movimiento.','error')
     return redirect(url_for('administracion'))
 
+
+
+
+@app.post('/administracion/producto/<int:pid>/ajustar-existencias')
+@solo_admin
+def ajustar_existencias_producto(pid):
+    """Establecer el inventario exacto y guardar la diferencia en el historial."""
+    validar_csrf()
+    texto=request.form.get('nueva_cantidad','').strip()
+    nota=request.form.get('nota','').strip()
+    try:
+        if not texto.isdecimal() or len(texto)>9 or len(nota)>160:
+            raise ValueError('Indica una cantidad entera válida y una nota de hasta 160 caracteres.')
+        nueva=int(texto)
+        if nueva>100000000:
+            raise ValueError('La cantidad debe estar entre 0 y 100,000,000 unidades.')
+        with conectar() as conexion:
+            with conexion.cursor(row_factory=dict_row) as cursor:
+                cursor.execute('SELECT id,nombre,cantidad FROM productos WHERE id=%s AND eliminado=FALSE FOR UPDATE',(pid,))
+                producto=cursor.fetchone()
+                if not producto:
+                    raise ValueError('No se encontró el producto en el inventario activo.')
+                anterior=producto['cantidad']
+                diferencia=nueva-anterior
+                if diferencia:
+                    cursor.execute('UPDATE productos SET cantidad=%s WHERE id=%s AND eliminado=FALSE',(nueva,pid))
+                    descripcion=f'Existencia anterior: {anterior}; nueva: {nueva}.'
+                    if nota:
+                        descripcion+=' '+nota
+                    cursor.execute(
+                        'INSERT INTO movimientos_inventario (producto_id,tipo,cantidad,nota) VALUES (%s,%s,%s,%s)',
+                        (pid,'Ajuste manual',diferencia,descripcion)
+                    )
+        if diferencia:
+            flash(f'Existencia de «{producto["nombre"]}» ajustada de {anterior} a {nueva} unidades.','success')
+        else:
+            flash('La cantidad ya coincide con la existencia registrada; no hubo cambios.','success')
+    except (ValueError,TypeError) as exc:
+        flash(str(exc) or 'Revisa la cantidad introducida.','error')
+    except psycopg.Error:
+        app.logger.exception('Error ajustando existencias exactas')
+        flash('No fue posible guardar el ajuste de existencias.','error')
+    return redirect(url_for('administracion'))
+
+
+@app.post('/administracion/producto/<int:pid>/eliminar')
+@solo_admin
+def eliminar_producto(pid):
+    """Retirar del catálogo sin borrar facturas, pedidos ni movimientos históricos."""
+    validar_csrf()
+    if request.form.get('confirmacion')!='ELIMINAR':
+        abort(400)
+    try:
+        with conectar() as conexion:
+            with conexion.cursor(row_factory=dict_row) as cursor:
+                cursor.execute('SELECT id,nombre FROM productos WHERE id=%s AND eliminado=FALSE FOR UPDATE',(pid,))
+                producto=cursor.fetchone()
+                if not producto:
+                    raise ValueError('El producto ya no se encuentra en el catálogo.')
+                # Un pedido sin resolver necesita conservar su producto disponible
+                # o debe ser rechazado/cancelado antes de retirarlo.
+                cursor.execute("""
+                    SELECT 1 FROM pedido_detalles d
+                    JOIN pedidos p ON p.id=d.pedido_id
+                    WHERE d.producto_id=%s AND p.estado IN ('Pendiente','Aceptado')
+                    LIMIT 1
+                """,(pid,))
+                if cursor.fetchone():
+                    raise ValueError('Este producto está en un pedido pendiente o aceptado. Resuelve ese pedido antes de eliminarlo.')
+                cursor.execute(
+                    'UPDATE productos SET eliminado=TRUE,activo=FALSE,eliminado_en=now() WHERE id=%s AND eliminado=FALSE',
+                    (pid,)
+                )
+        flash(f'Producto «{producto["nombre"]}» eliminado del catálogo. Puedes recuperarlo abajo.','success')
+    except ValueError as exc:
+        flash(str(exc),'error')
+    except psycopg.Error:
+        app.logger.exception('Error eliminando producto del catálogo')
+        flash('No se pudo eliminar el producto.','error')
+    return redirect(url_for('administracion'))
+
+
+@app.post('/administracion/producto/<int:pid>/recuperar')
+@solo_admin
+def recuperar_producto(pid):
+    """Recuperación explícita: se mantiene desactivado hasta que se reactive."""
+    validar_csrf()
+    try:
+        with conectar() as conexion:
+            with conexion.cursor(row_factory=dict_row) as cursor:
+                cursor.execute(
+                    'UPDATE productos SET eliminado=FALSE,eliminado_en=NULL,activo=FALSE WHERE id=%s AND eliminado=TRUE RETURNING nombre',
+                    (pid,)
+                )
+                recuperado=cursor.fetchone()
+                if not recuperado:
+                    raise ValueError('No se encontró un producto eliminado con ese identificador.')
+        flash(f'Producto «{recuperado["nombre"]}» recuperado como inactivo. Actívalo cuando quieras ponerlo a la venta.','success')
+    except ValueError as exc:
+        flash(str(exc),'error')
+    except psycopg.Error:
+        app.logger.exception('Error recuperando producto')
+        flash('No se pudo recuperar el producto.','error')
+    return redirect(url_for('administracion'))
 
 
 @app.post('/administracion/producto/<int:pid>/estado')
@@ -775,7 +887,7 @@ def cambiar_estado_producto(pid):
     try:
         with conectar() as conexion:
             with conexion.cursor() as cursor:
-                cursor.execute('UPDATE productos SET activo=%s WHERE id=%s', (nuevo == 'true', pid))
+                cursor.execute('UPDATE productos SET activo=%s WHERE id=%s AND eliminado=FALSE', (nuevo == 'true', pid))
                 if cursor.rowcount != 1:
                     abort(404)
         flash('Estado del producto actualizado.', 'success')
@@ -868,7 +980,7 @@ def pedidos_publicos():
     try:
         with conectar() as conexion:
             with conexion.cursor(row_factory=dict_row) as cursor:
-                cursor.execute('SELECT id,nombre,precio,cantidad FROM productos WHERE activo=TRUE AND cantidad>0 ORDER BY nombre,id')
+                cursor.execute('SELECT id,nombre,precio,cantidad FROM productos WHERE activo=TRUE AND eliminado=FALSE AND cantidad>0 ORDER BY nombre,id')
                 productos=cursor.fetchall()
         return render_template('pedir.html',productos=productos,push_public_key=PUSH_PUBLIC_KEY)
     except psycopg.Error:
@@ -942,7 +1054,7 @@ def enviar_pedido():
             cliente_push=None
         with conectar() as conexion:
             with conexion.cursor(row_factory=dict_row) as cursor:
-                cursor.execute('SELECT id,nombre,precio,cantidad,activo FROM productos WHERE id=ANY(%s) ORDER BY id', (list(cantidades),))
+                cursor.execute('SELECT id,nombre,precio,cantidad,activo,eliminado FROM productos WHERE id=ANY(%s) ORDER BY id FOR SHARE', (list(cantidades),))
                 productos=cursor.fetchall()
                 if len(productos)!=len(cantidades):
                     raise ValueError('Un producto ya no está disponible.')
@@ -951,7 +1063,7 @@ def enviar_pedido():
                 por_id={p['id']:p for p in productos}
                 for producto in productos:
                     q=cantidades[producto['id']]
-                    if not producto['activo'] or producto['cantidad']<q:
+                    if not producto['activo'] or producto['eliminado'] or producto['cantidad']<q:
                         raise ValueError('No hay suficientes unidades de '+producto['nombre'])
                 for (pid,relleno),q in variantes.items():
                     producto=por_id[pid]
@@ -1048,7 +1160,7 @@ def procesar_pedido(pedido_id, accion):
                     if accion=='aceptar':
                         # Reserva de existencias. No crea venta ni ingresos.
                         for d in detalles:
-                            cursor.execute('UPDATE productos SET cantidad=cantidad-%s WHERE id=%s AND activo=TRUE AND cantidad >= %s RETURNING id', (d['cantidad'],d['producto_id'],d['cantidad']))
+                            cursor.execute('UPDATE productos SET cantidad=cantidad-%s WHERE id=%s AND activo=TRUE AND eliminado=FALSE AND cantidad >= %s RETURNING id', (d['cantidad'],d['producto_id'],d['cantidad']))
                             if cursor.fetchone() is None:
                                 raise ValueError('No hay existencias suficientes para '+d['nombre_producto'])
                         cursor.execute("UPDATE pedidos SET estado='Aceptado',procesado_en=now() WHERE id=%s",(pedido_id,))
