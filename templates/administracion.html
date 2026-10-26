@@ -10,14 +10,45 @@
 @media(max-width:550px){.inventario-indicadores{grid-template-columns:1fr}.inventario-indicador{padding:15px}}
 .panel-usuarios-admin .boton-usuarios{background:#77401d;color:white!important;padding:11px 15px;border-radius:10px;font-weight:750;white-space:nowrap}
 .panel-usuarios-admin .boton-usuarios:hover{text-decoration:none;background:#995523}
-.admin-card .ajuste-existencias{background:#eef6ed;border:1px solid #c4ddc5;border-radius:12px;padding:13px;margin:15px 0 12px;display:grid;gap:8px}
-.admin-card .ajuste-existencias h4{margin:0;color:#245b33;font-size:15px}
-.admin-card .ajuste-existencias small{color:#385b39}
-.admin-card .ajuste-existencias input[type=number]{width:100%;font-size:18px;font-weight:750}
-.admin-card .ajuste-existencias button{background:#267a4f!important;color:#fff!important}
-.admin-card .eliminar-producto{margin-top:15px;padding-top:12px;border-top:1px solid #ead4c3}
-.admin-card .eliminar-producto button{background:#a6342b!important;color:#fff!important;font-weight:750;width:100%}
-.admin-card .eliminar-producto small{display:block;color:#805c45;margin-bottom:7px}
+
+/* Tarjetas cortas: las acciones se despliegan al tocarlas, sin JavaScript. */
+.admin-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));align-items:start}
+.admin-card{padding:16px;min-width:0}
+.admin-producto-cabecera{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap}
+.admin-producto-cabecera h3{font-size:16px;line-height:1.35;flex:1 1 130px}
+.admin-producto-cabecera small{font-weight:500;white-space:nowrap}
+.admin-producto-cabecera .estado-producto{font-size:11px;font-weight:800;border-radius:999px;padding:4px 9px;background:#e5f1e8;color:#246a3e}
+.admin-producto-cabecera .estado-producto.inactivo{background:#f7e2d8;color:#a13e2c}
+.admin-card .existencias-actuales{margin:11px 0 15px;font-size:13px;color:#775039}
+.admin-card .existencias-actuales strong{font-size:19px;color:#4d2b19}
+.admin-acciones{display:grid;gap:8px}
+.admin-accion{border:1px solid #e6d2bf;border-radius:11px;background:#fff;overflow:hidden}
+.admin-accion summary{display:flex;align-items:center;justify-content:space-between;gap:9px;cursor:pointer;
+  padding:12px 13px;list-style:none;font-size:13px;font-weight:800;color:#77401d;background:#fbf2e9;
+  -webkit-tap-highlight-color:transparent;user-select:none}
+.admin-accion summary::-webkit-details-marker{display:none}
+.admin-accion summary::after{content:"⌄";font-size:23px;font-weight:700;line-height:10px;flex:none;transition:transform .15s}
+.admin-accion[open] summary::after{transform:rotate(180deg)}
+.admin-accion summary:focus-visible{outline:3px solid #267a4f;outline-offset:-3px}
+.admin-accion[open]{border-color:#c8b09a}
+.admin-accion[open] summary{border-bottom:1px solid #e6d2bf}
+.admin-accion .contenido-accion{padding:12px}
+.admin-accion .contenido-accion form{display:grid;gap:9px;margin:0}
+.admin-accion .contenido-accion form+form{margin-top:10px}
+.admin-accion .contenido-accion label{font-size:12px;font-weight:700;display:grid;gap:5px;color:#62412b}
+.admin-accion .contenido-accion input,.admin-accion .contenido-accion select{width:100%;margin:0;font-size:14px}
+.admin-accion .contenido-accion button{width:100%;padding:10px 12px;min-height:39px}
+.admin-accion .contenido-accion small{display:block;font-size:11px;color:#85634e;line-height:1.45}
+.admin-accion.accion-inventario{border-color:#c4ddc5}
+.admin-accion.accion-inventario summary{color:#245b33;background:#edf6ee}
+.admin-accion.accion-inventario[open] summary{border-bottom-color:#c4ddc5}
+.admin-accion.accion-inventario .boton-guardar{background:#267a4f!important;color:white!important}
+.admin-accion.accion-movimiento summary{background:#f7eee5}
+.admin-accion.accion-opciones summary{background:#f4ebe2}
+.admin-accion .accion-separada{border-top:1px solid #ead4c3;padding-top:11px}
+.admin-accion .boton-eliminar{background:#a6342b!important;color:white!important;font-weight:800}
+.admin-accion .boton-estado{background:#865c44!important;color:white!important}
+@media(max-width:540px){.admin-card{padding:14px}.admin-grid{gap:12px}}
 .eliminados-panel{margin:20px 0;padding:15px;border:1px dashed #cfb19b;border-radius:14px;background:#fffaf4}
 .eliminados-panel summary{cursor:pointer;font-weight:800;color:#77401d}
 .eliminados-panel p{color:#805c45;font-size:13px}
@@ -55,28 +86,94 @@
   </article>
 </section>
 
-<div class="admin-grid">{% for p in productos %}<section class="admin-card"><h3>{{ p.nombre }} <small>#{{ p.id }}</small> {% if not p.activo %}<small style="color:#b43d28">(Inactivo)</small>{% endif %}</h3><p>Existencias actuales: <strong>{{ p.cantidad }}</strong> unidades</p>
-<form class="ajuste-existencias" method="post" action="{{ url_for('ajustar_existencias_producto',pid=p.id) }}">
-  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-  <h4>Ajustar inventario manualmente</h4>
-  <label>Nueva cantidad total
-    <input name="nueva_cantidad" type="number" inputmode="numeric" step="1" min="0" max="100000000" value="{{ p.cantidad }}" required aria-label="Nueva existencia total de {{ p.nombre }}">
-  </label>
-  <label>Motivo (opcional)
-    <input name="nota" maxlength="160" placeholder="Ej.: Conteo físico">
-  </label>
-  <small>Escribe la cantidad real (no la diferencia). Puedes colocar 0; el ajuste queda registrado.</small>
-  <button type="submit">Guardar existencias</button>
-</form>
-<form method="post" action="{{ url_for('editar_producto',pid=p.id) }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><label>Nombre <input name="nombre" value="{{ p.nombre }}" maxlength="100" required></label><label>Precio (RD$) <input name="precio" type="number" min="0" max="99999999.99" step="0.01" value="{{ p.precio }}" required></label><button>Guardar nombre y precio</button></form><form method="post" action="{{ url_for('movimiento_producto',pid=p.id) }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><label>Tipo de movimiento <select name="tipo"><option value="Diaria">Producción diaria (+)</option><option value="Lote">Producción por lote (+)</option><option value="Ajuste entrada">Ajuste de entrada (+)</option><option value="Ajuste salida">Ajuste de salida (-)</option><option value="Merma">Pérdida / merma (-)</option></select></label><label>Unidades <input name="cantidad" type="number" min="1" max="1000000" required></label><label>Nota (opcional) <input name="nota" maxlength="250" placeholder="Ej.: Producción del turno mañana"></label><button>Registrar movimiento</button></form><form method="post" action="{{ url_for('cambiar_estado_producto',pid=p.id) }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="activo" value="{{ 'true' if not p.activo else 'false' }}"><button type="submit" style="background:{{ '#214b32' if not p.activo else '#9b4336' }}" onclick="return confirm('¿Cambiar disponibilidad de este producto?')">{{ 'Reactivar producto' if not p.activo else 'Desactivar producto' }}</button></form>
-<form class="eliminar-producto" method="post" action="{{ url_for('eliminar_producto',pid=p.id) }}"
-      onsubmit="return confirm('¿Eliminar este producto del catálogo? No aparecerá para venta ni para clientes. Las facturas y movimientos anteriores se conservarán. Podrás recuperarlo desde Productos eliminados.');">
-  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-  <input type="hidden" name="confirmacion" value="ELIMINAR">
-  <small>Retirar del catálogo sin borrar las ventas anteriores.</small>
-  <button type="submit">Eliminar producto</button>
-</form>
-</section>{% endfor %}</div>
+
+<div class="admin-grid">
+  {% for p in productos %}
+  <section class="admin-card" aria-label="Administrar {{ p.nombre }}">
+    <div class="admin-producto-cabecera">
+      <h3>{{ p.nombre }} <small>#{{ p.id }}</small></h3>
+      <span class="estado-producto{{ ' inactivo' if not p.activo else '' }}">{{ 'Activo' if p.activo else 'Inactivo' }}</span>
+    </div>
+    <p class="existencias-actuales">Existencias: <strong>{{ p.cantidad }}</strong> unidades</p>
+
+    <div class="admin-acciones">
+      <details class="admin-accion accion-inventario" name="acciones-producto-{{ p.id }}">
+        <summary>Ajustar existencias</summary>
+        <div class="contenido-accion">
+          <form method="post" action="{{ url_for('ajustar_existencias_producto',pid=p.id) }}">
+            <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+            <label>Nueva cantidad total
+              <input name="nueva_cantidad" type="number" inputmode="numeric" step="1" min="0" max="100000000"
+                     value="{{ p.cantidad }}" required aria-label="Nueva existencia total de {{ p.nombre }}">
+            </label>
+            <label>Motivo (opcional)
+              <input name="nota" maxlength="160" placeholder="Ej.: Conteo físico">
+            </label>
+            <small>Escribe la cantidad real, no la diferencia. Puedes colocar 0.</small>
+            <button type="submit" class="boton-guardar">Guardar existencias</button>
+          </form>
+        </div>
+      </details>
+
+      <details class="admin-accion accion-movimiento" name="acciones-producto-{{ p.id }}">
+        <summary>Registrar movimiento</summary>
+        <div class="contenido-accion">
+          <form method="post" action="{{ url_for('movimiento_producto',pid=p.id) }}">
+            <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+            <label>Tipo de movimiento
+              <select name="tipo">
+                <option value="Diaria">Producción diaria (+)</option>
+                <option value="Lote">Producción por lote (+)</option>
+                <option value="Ajuste entrada">Ajuste de entrada (+)</option>
+                <option value="Ajuste salida">Ajuste de salida (-)</option>
+                <option value="Merma">Pérdida / merma (-)</option>
+              </select>
+            </label>
+            <label>Unidades
+              <input name="cantidad" type="number" inputmode="numeric" min="1" max="1000000" required>
+            </label>
+            <label>Nota (opcional)
+              <input name="nota" maxlength="250" placeholder="Ej.: Producción del turno mañana">
+            </label>
+            <button type="submit">Registrar movimiento</button>
+          </form>
+        </div>
+      </details>
+
+      <details class="admin-accion accion-opciones" name="acciones-producto-{{ p.id }}">
+        <summary>Opciones del producto</summary>
+        <div class="contenido-accion">
+          <form method="post" action="{{ url_for('editar_producto',pid=p.id) }}">
+            <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+            <label>Nombre
+              <input name="nombre" value="{{ p.nombre }}" maxlength="100" required>
+            </label>
+            <label>Precio (RD$)
+              <input name="precio" type="number" min="0" max="99999999.99" step="0.01" value="{{ p.precio }}" required>
+            </label>
+            <button type="submit">Guardar nombre y precio</button>
+          </form>
+          <form class="accion-separada" method="post" action="{{ url_for('cambiar_estado_producto',pid=p.id) }}">
+            <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+            <input type="hidden" name="activo" value="{{ 'true' if not p.activo else 'false' }}">
+            <button type="submit" class="boton-estado"
+                    onclick="return confirm('¿Cambiar disponibilidad de este producto?')">
+              {{ 'Reactivar producto' if not p.activo else 'Desactivar producto' }}
+            </button>
+          </form>
+          <form class="accion-separada" method="post" action="{{ url_for('eliminar_producto',pid=p.id) }}"
+                onsubmit="return confirm('¿Eliminar este producto del catálogo? No aparecerá para venta ni para clientes. Las facturas y movimientos anteriores se conservarán. Podrás recuperarlo desde Productos eliminados.');">
+            <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+            <input type="hidden" name="confirmacion" value="ELIMINAR">
+            <small>Retirar del catálogo sin borrar ventas anteriores.</small>
+            <button type="submit" class="boton-eliminar">Eliminar producto</button>
+          </form>
+        </div>
+      </details>
+    </div>
+  </section>
+  {% endfor %}
+</div>
 <details class="eliminados-panel">
   <summary>Productos eliminados ({{ eliminados|length }}) · Ver y recuperar</summary>
   <p>Los productos eliminados no aparecen en el catálogo ni en las ventas. Sus facturas, pedidos y movimientos se conservan. Al recuperarlos quedan inactivos hasta que los reactives.</p>
